@@ -1,0 +1,42 @@
+# The directory Mix will write compiled artifacts to.
+/_build/
+
+# If you run "mix test --cover", coverage assets end up here.
+/cover/
+
+# The directory Mix downloads your dependencies sources to.
+/deps/
+
+# Where third-party dependencies like ExDoc output generated docs.
+/doc/
+
+# If the VM crashes, it generates a dump, let's ignore it too.
+erl_crash.dump
+
+# Also ignore archive artifacts (built via "mix archive.build").
+*.ez
+
+# Ignore package tarball (built via "mix hex.build").
+tidefall-*.tar
+
+# Temporary files, for example, from tests.
+/tmp/
+
+# Others
+*.o
+*.beam
+*.plt
+erl_crash.dump
+.DS_Store
+.elixir*
+.vs*
+/priv
+Elixir*
+
+# Keep tracked usage-rules even though `Elixir*` matches case-insensitively on macOS
+!usage-rules/elixir*.md
+
+# AI agent files
+CLAUDE.md
+/.claude
+/.cursor
