@@ -36,6 +36,7 @@ jobs:
 
     env:
       GITHUB_TOKEN: '${{ secrets.GITHUB_TOKEN }}'
+      CODECOV_TOKEN: '${{ secrets.CODECOV_TOKEN }}'
       MIX_ENV: test
 
     steps:
@@ -100,6 +101,13 @@ jobs:
 
       - name: Run tests with coverage
         run: mix coveralls.json
+        if: ${{ matrix.coverage }}
+
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          fail_ci_if_error: true
+          flags: unittests-elixir-${{ matrix.elixir }}-otp-${{ matrix.otp }}
         if: ${{ matrix.coverage }}
 
       - name: Restore PLT Cache
