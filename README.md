@@ -1,5 +1,5 @@
 # Tidefall :ocean:
-> DATA RISES. THEN IT FALLS.
+> _**DATA RISES. THEN IT FALLS.**_
 
 ![CI](https://github.com/cabol/tidefall/workflows/CI/badge.svg)
 [![Codecov](https://codecov.io/gh/cabol/tidefall/graph/badge.svg)](https://codecov.io/gh/cabol/tidefall)
@@ -100,8 +100,16 @@ workflow, validation steps (`mix test.ci`), and commit conventions.
 
 ## 🙏 Acknowledgements
 
-Tidefall was originally developed at [Appcues](https://github.com/appcues)
-under the name [`partitioned_buffer`](https://hex.pm/packages/partitioned_buffer).
-It is now maintained independently under a new name and direction. Many thanks
-to the Appcues team for releasing the original implementation under the MIT
-license.
+Tidefall began as a fork of
+[`partitioned_buffer`](https://hex.pm/packages/partitioned_buffer), originally
+developed at [Appcues](https://github.com/appcues). `partitioned_buffer` is
+still maintained by Appcues; Tidefall is an independent fork that has since
+taken a different direction. Many thanks to the Appcues team for releasing the
+original implementation under the MIT license.
+
+## 📄 Copyright and License
+
+Copyright 2026 Carlos Bolaños (Tidefall)\
+Copyright 2025 Appcues, Inc. (PartitionedBuffer)
+
+Tidefall source code is licensed under the [MIT License](LICENSE.md).
