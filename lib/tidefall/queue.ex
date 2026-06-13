@@ -102,6 +102,9 @@ defmodule Tidefall.Queue do
         Enum.each(batch, fn value -> process(value) end)
       end
 
+  See [The processor](`m:Tidefall#module-the-processor`) for when it runs,
+  batching, failure isolation, and shutdown-drain behavior.
+
   """
 
   @behaviour Tidefall.Buffer
@@ -156,7 +159,10 @@ defmodule Tidefall.Queue do
 
   ## Examples
 
-      Tidefall.Queue.start_link(name: :my_queue_buffer)
+      Tidefall.Queue.start_link(
+        name: :my_queue_buffer,
+        processor: &MyApp.Sink.process/1
+      )
 
   """
   @spec start_link(keyword()) :: Supervisor.on_start()

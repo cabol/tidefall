@@ -64,9 +64,14 @@ defmodule Tidefall.HashMap do
   ETS match specs (used by `put_newer/4`/`put_all_newer/3`)
   cannot equality-compare arbitrary terms in the match head — in
   particular, **maps anywhere in the key** fall back to subset
-  semantics and may match the wrong row. To support complex
-  keys, pass `:key_hasher` on every operation that touches a
-  given key (see the per-function docs for the option).
+  semantics and may match the wrong row. Plain `put/4` and
+  `put_all/3` are unaffected (they do not use match specs);
+  `:key_hasher` is only needed once you use `put_newer/4` or
+  `put_all_newer/3` on a complex key. When you do, pass the **same**
+  `:key_hasher` on every operation that touches that key — including
+  `put/4`, `get/4`, and `delete/3` — otherwise hashed and non-hashed
+  writes produce two distinct entries for one logical key (see the
+  per-function docs for the option).
 
   ## Start options
 
@@ -156,6 +161,9 @@ defmodule Tidefall.HashMap do
   When `:key_hasher` is used, the entry's `:key` is the **original**
   (pre-hash) key — the hash is purely an internal ETS lookup detail.
 
+  See [The processor](`m:Tidefall#module-the-processor`) for when it runs,
+  batching, failure isolation, and shutdown-drain behavior.
+
   """
 
   @behaviour Tidefall.Buffer
@@ -181,6 +189,12 @@ defmodule Tidefall.HashMap do
   `put_all_newer/3`. Restricted to integers, atoms, and binaries —
   see the `:version` option for semantics and the caveat about
   mixing types.
+
+  Versions are compared with Erlang term ordering, not as wall-clock
+  timestamps. If you use integer timestamps as versions, clock skew
+  across nodes can let a stale write win; prefer a monotonic source
+  (a per-entity counter, or a lexicographically-ordered binary such as
+  a ULID) when cross-node correctness matters.
   """
   @type version() :: integer() | atom() | binary()
 
@@ -250,7 +264,10 @@ defmodule Tidefall.HashMap do
 
   ## Examples
 
-      Tidefall.HashMap.start_link(name: :my_hash_map_buffer)
+      Tidefall.HashMap.start_link(
+        name: :my_hash_map_buffer,
+        processor: &MyApp.Sink.process/1
+      )
 
   """
   @spec start_link(keyword()) :: Supervisor.on_start()
@@ -488,8 +505,10 @@ defmodule Tidefall.HashMap do
       # Simple get
       get(:my_buffer, :key1)
 
-      # With custom partition routing
-      get(:my_buffer, :key1, partition_key: fn {k, _v} -> k end)
+      # With an explicit default and the same partition routing used on write
+      # (`get/4` is `get(buffer, key, default \\ nil, opts \\ [])`, so the
+      # default must be passed before the options)
+      get(:my_buffer, :key1, nil, partition_key: :shard_a)
 
   """
   @spec get(buffer(), any(), any(), keyword()) :: any()

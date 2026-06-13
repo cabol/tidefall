@@ -25,7 +25,7 @@ It ships with two concrete buffer implementations:
 Both use partitioning to reduce lock contention and double-buffering for
 zero-downtime processing.
 
-## Installation
+## 📦 Installation
 
 Add `:tidefall` to your list of dependencies in `mix.exs`:
 
@@ -37,7 +37,7 @@ def deps do
 end
 ```
 
-## Usage
+## 🚀 Usage
 
 The recommended pattern is to define a dedicated buffer module and add it to
 your supervision tree. The module name becomes the default instance name:
@@ -92,7 +92,13 @@ the module-based and direct-usage guides, configuration (config file and
 supervision tree), choosing between Queue and HashMap, telemetry events, and
 the complete start/runtime option reference.
 
-## Acknowledgements
+## 🤝 Contributing
+
+Contributions are welcome and appreciated! To report a bug, request a feature,
+or open a pull request, see [`CONTRIBUTING.md`](CONTRIBUTING.md) for the
+workflow, validation steps (`mix test.ci`), and commit conventions.
+
+## 🙏 Acknowledgements
 
 Tidefall was originally developed at [Appcues](https://github.com/appcues)
 under the name [`partitioned_buffer`](https://hex.pm/packages/partitioned_buffer).

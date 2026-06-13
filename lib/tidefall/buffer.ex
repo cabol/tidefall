@@ -105,6 +105,9 @@ defmodule Tidefall.Buffer do
   @doc """
   Returns the buffer size (total number of messages across all partitions).
 
+  Exposed as `size/1` on `Tidefall.Queue` and `Tidefall.HashMap` — most
+  code calls those rather than `buffer_size/1` directly.
+
   ## Examples
 
       iex> Tidefall.Buffer.buffer_size(:my_buffer)

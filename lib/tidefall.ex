@@ -23,10 +23,12 @@ defmodule Tidefall do
   ## On this page
 
     * [Quick start](#module-quick-start) — start a buffer in a few lines
+    * [The processor](#module-the-processor) — when it runs, batching, failure, drain
     * [Choosing a buffer type](#module-choosing-a-buffer-type) — Queue vs. HashMap
     * [Module-based buffers](#module-module-based-buffers-recommended) — the recommended pattern
     * [Direct usage](#module-direct-usage-quick-dynamic) — quick or fully dynamic instances
     * [Configuration](#module-configuration) — config file and supervision tree
+    * [Testing](#module-testing) — testing code that writes to a buffer
     * [Architecture](#module-architecture) — supervision tree and partitions
     * [Application configuration](#module-application-configuration) — `:tidefall` app env
     * [Telemetry](#module-telemetry) — emitted events
@@ -49,9 +51,36 @@ defmodule Tidefall do
       iex> Tidefall.Queue.push(:my_queue, ["event-2", "event-3"])
       :ok
 
-  The processor runs in a task on each processing tick (default every
-  five seconds) with the accumulated batch. The buffer is **drain-only**
-  — producers write, the engine drains; there is no read-back queue.
+  The buffer is **drain-only** — producers write, the engine drains; there
+  is no read-back queue.
+
+  ## The processor
+
+  The processor is a function of arity 1 (`fn batch -> ... end` /
+  `&Mod.fun/1`) or an MFA, invoked on each processing tick with the
+  accumulated batch. What to know before relying on it:
+
+    * **Timing** — a tick runs every `:processing_interval` milliseconds
+      (default `5_000`).
+    * **Batch size** — the processor is called with up to
+      `:processing_batch_size` items (default `10`), so a tick holding more
+      items than that invokes the processor **multiple times**. Raise
+      `:processing_batch_size`, or set it to `:table` to receive the whole
+      buffer in a single call.
+    * **Return value** — discarded. The processor runs for its side effects
+      (export, persist, forward).
+    * **Failure isolation** — it runs in a task **unlinked** from the
+      partition, so a processor that raises or exceeds `:processing_timeout`
+      does not crash the buffer. That batch is dropped (its table was
+      already swapped out) and the
+      `[:tidefall, :partition, :processing, :exception]` and
+      `[:tidefall, :partition, :processing_failed]` telemetry events fire.
+    * **Shutdown drain** — on graceful `stop/3`, each partition runs a final
+      tick so buffered items are processed before the buffer terminates.
+
+  The batch **shape** differs by buffer type — a list of values for
+  `Tidefall.Queue`, a list of `t:Tidefall.HashMap.Entry.t/0` structs for
+  `Tidefall.HashMap`. See each module for details.
 
   ## Choosing a buffer type
 
@@ -86,21 +115,31 @@ defmodule Tidefall do
         use Tidefall.HashMap, otp_app: :my_app
       end
 
-  Add them to your supervision tree and call the generated functions on
-  the default instance (named after the module):
+  Add them to your supervision tree and call the generated functions on the
+  default instance (named after the module). Each buffer still needs a
+  `:processor` — supply it in the child spec, the `use` opts, or the
+  application environment (see [Configuration](#module-configuration)):
 
-      children = [MyApp.EventQueue, MyApp.StateMap]
+      children = [
+        {MyApp.EventQueue, processor: &MyApp.Sink.export/1},
+        {MyApp.StateMap, processor: &MyApp.Sink.export/1}
+      ]
 
       :ok = MyApp.EventQueue.push(event)
       :ok = MyApp.EventQueue.push(event, partition_key: 1)
       :ok = MyApp.StateMap.put(key, value)
       :ok = MyApp.StateMap.put_newer(key, value, version: v)
 
-  The generated functions come in distinct arities: the nameless variants
-  operate on the default instance, while a single full-arity variant takes
-  the instance name as its first argument. To address a **dynamically
-  started instance** of the same definition, use that full-arity form with
-  every argument explicit (including the trailing options):
+  The generated functions come in two forms:
+
+    * **Default instance** — nameless variants operating on the buffer
+      named after the module, e.g. `MyApp.StateMap.put(key, value)`.
+    * **Explicit instance** — one full-arity variant that takes the instance
+      name first, with every argument explicit (including the trailing
+      options), e.g. `MyApp.StateMap.put(:tenant_a, key, value, [])`.
+
+  Use the explicit form to address a **dynamically started instance** of
+  the same definition:
 
       {:ok, _} = MyApp.StateMap.start_link(name: :tenant_a)
       :ok = MyApp.StateMap.put(:tenant_a, key, value, [])
@@ -162,6 +201,22 @@ defmodule Tidefall do
   See `Tidefall.Queue` and `Tidefall.HashMap` for the full list of start
   and runtime options.
 
+  ## Testing
+
+  Buffers process asynchronously on a timer, so tests should not depend on
+  wall-clock timing:
+
+    * Start the buffer with a short `:processing_interval` and a processor
+      that sends to the test process, then `assert_receive`:
+
+          processor: fn batch -> send(self(), {:batch, batch}) end
+
+    * Or push items and call `stop/3` — the shutdown drain processes
+      buffered items synchronously before it returns.
+
+  Start buffers per test (for example with `start_supervised!/1`) so state
+  does not leak between tests.
+
   ## Architecture
 
   ```asciidoc
@@ -188,6 +243,16 @@ defmodule Tidefall do
   partition double-buffers its ETS table so processing swaps in a fresh
   table with zero downtime. Per-type data flow lives in the
   `Tidefall.Queue` and `Tidefall.HashMap` docs.
+
+  Two independent knobs control partitioning: the per-buffer `:partitions`
+  start option (how many partitions a single buffer spreads its writes
+  across; default `System.schedulers_online()`) and the app-level
+  `:registry_partitions` (see
+  [Application configuration](#module-application-configuration)), which
+  sizes the shared registry every buffer consults on each write. Raise
+  `:partitions` when one buffer is write-bound; raise `:registry_partitions`
+  when many buffers or very high aggregate write throughput make the shared
+  registry the bottleneck.
 
   ## Application configuration
 
@@ -232,19 +297,19 @@ defmodule Tidefall do
     * `[:tidefall, :partition, :processing, :start]` - Dispatched
       when a partition begins processing a batch of messages.
 
-      * Measurement: `%{system_time: integer}`
+      * Measurement: `%{system_time: integer, monotonic_time: integer}`
       * Metadata: `%{buffer: atom, partition: atom}`
 
     * `[:tidefall, :partition, :processing, :stop]` - Dispatched
       when a partition completes processing a batch of messages.
 
-      * Measurement: `%{duration: native_time, size: non_neg_integer}`
+      * Measurement: `%{duration: native_time, monotonic_time: integer, size: non_neg_integer}`
       * Metadata: `%{buffer: atom, partition: atom}`
 
     * `[:tidefall, :partition, :processing, :exception]` - Dispatched
       when an exception occurs during processing.
 
-      * Measurement: `%{duration: native_time}`
+      * Measurement: `%{duration: native_time, monotonic_time: integer}`
       * Metadata:
 
       ```
