@@ -274,6 +274,22 @@ defmodule Tidefall.Buffer.DefinitionTest do
         Definition.define(Tidefall.Queue, [{:bogus_op, 0, 0, 0}], otp_app: :tidefall)
       end
     end
+
+    test "error: :otp_app must be a non-nil atom" do
+      assert_raise ArgumentError, ~r/:otp_app option to be an OTP/, fn ->
+        Definition.define(Tidefall.Queue, [], otp_app: nil)
+      end
+
+      assert_raise ArgumentError, ~r/:otp_app option to be an OTP/, fn ->
+        Definition.define(Tidefall.Queue, [], otp_app: "my_app")
+      end
+    end
+
+    test "error: a backend module that cannot be loaded fails the build" do
+      assert_raise ArgumentError, ~r/could not be loaded/, fn ->
+        Definition.define(__MODULE__.NoSuchBackend, [{:x, 0, 0, 0}], otp_app: :tidefall)
+      end
+    end
   end
 
   describe "child_spec/1" do

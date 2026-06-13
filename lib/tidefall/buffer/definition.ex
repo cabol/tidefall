@@ -111,17 +111,24 @@ defmodule Tidefall.Buffer.Definition do
   # message rather than letting `resolve_opts/2` raise a bare KeyError at
   # the first start.
   defp validate_otp_app!(buffer_type, opts) do
-    Keyword.has_key?(opts, :otp_app) ||
-      raise ArgumentError,
-            "#{inspect(buffer_type)} requires the :otp_app option — " <>
-              "use it as `use #{inspect(buffer_type)}, otp_app: :your_app`"
+    case Keyword.get(opts, :otp_app) do
+      app when is_atom(app) and not is_nil(app) ->
+        :ok
+
+      _ ->
+        raise ArgumentError,
+              "#{inspect(buffer_type)} requires the :otp_app option to be an OTP " <>
+                "application name (atom) — use it as " <>
+                "`use #{inspect(buffer_type)}, otp_app: :your_app`"
+    end
   end
 
   # The op specs are hand-authored; assert every arity they will generate
   # actually exists on the backend so a miscounted tuple fails the build
   # instead of silently delegating to a wrong/absent arity.
   defp validate_specs!(buffer_type, specs) do
-    Code.ensure_loaded?(buffer_type)
+    Code.ensure_loaded?(buffer_type) ||
+      raise ArgumentError, "#{inspect(buffer_type)} could not be loaded for op-spec validation"
 
     for {name, leading, min_opt, max_opt} <- specs,
         arity <- (1 + leading + min_opt)..(1 + leading + max_opt) do
