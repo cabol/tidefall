@@ -1,7 +1,7 @@
 defmodule Tidefall.MixProject do
   use Mix.Project
 
-  @version "1.0.0-dev"
+  @version "1.0.0-rc.0"
   @source_url "https://github.com/cabol/tidefall"
 
   def project do
@@ -24,7 +24,7 @@ defmodule Tidefall.MixProject do
 
       # Hex
       package: package(),
-      description: "ETS-based partitioned buffer for high-throughput data processing",
+      description: "ETS-based buffer for high-throughput writes and batch processing",
 
       # Docs
       name: "Tidefall",

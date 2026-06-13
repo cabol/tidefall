@@ -32,7 +32,7 @@ Add `:tidefall` to your list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:tidefall, "~> 1.0"}
+    {:tidefall, "~> 1.0.0-rc.0"}
   ]
 end
 ```
