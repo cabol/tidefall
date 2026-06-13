@@ -2,6 +2,7 @@
 > DATA RISES. THEN IT FALLS.
 
 ![CI](https://github.com/cabol/tidefall/workflows/CI/badge.svg)
+[![Codecov](https://codecov.io/gh/cabol/tidefall/graph/badge.svg)](https://codecov.io/gh/cabol/tidefall)
 [![Hex.pm](https://img.shields.io/hexpm/v/tidefall.svg)](https://hex.pm/packages/tidefall)
 [![Documentation](https://img.shields.io/badge/Documentation-ff69b4)](https://hexdocs.pm/tidefall)
 
@@ -15,9 +16,11 @@ configurable processor function at regular intervals.
 It ships with two concrete buffer implementations:
 
 - **`Tidefall.Queue`** — Ordered queue buffer (insertion-time ordered,
-  backed by `:ordered_set` ETS tables).
-- **`Tidefall.HashMap`** — Coalescing key-value buffer (last-write-wins semantics,
-  backed by `:set` ETS tables).
+  backed by `:ordered_set` ETS tables). Every pushed item is buffered and
+  drained to the processor.
+- **`Tidefall.HashMap`** — Coalescing key-value buffer (last-write-wins
+  semantics, backed by `:set` ETS tables). Same-key writes coalesce, so only
+  the latest value per key survives to the next tick.
 
 Both use partitioning to reduce lock contention and double-buffering for
 zero-downtime processing.
@@ -36,14 +39,8 @@ end
 
 ## Usage
 
-### Defining a buffer module (recommended)
-
-The recommended way to use a buffer is to define a dedicated module with
-`use Tidefall.Queue` or `use Tidefall.HashMap`. The module name becomes
-the default instance name, and start options can be layered from
-compile-time `use` opts, the application environment (`:otp_app` is
-required), and explicit `start_link`/child-spec opts (in that order of
-increasing precedence):
+The recommended pattern is to define a dedicated buffer module and add it to
+your supervision tree. The module name becomes the default instance name:
 
 ```elixir
 defmodule MyApp.EventQueue do
@@ -56,160 +53,44 @@ end
 ```
 
 ```elixir
-# config/runtime.exs (optional layer — requires `otp_app:` above)
-config :my_app, MyApp.StateMap,
-  processor: &MyApp.Sink.process/1,
-  partitions: 4
-```
-
-```elixir
 # Supervision tree
 children = [
-  MyApp.EventQueue,
-  {MyApp.StateMap, processing_interval: 5_000}
+  {MyApp.EventQueue, processor: &MyApp.Sink.export/1, processing_interval: 1_000},
+  {MyApp.StateMap, processor: &MyApp.Sink.export/1}
 ]
+
+Supervisor.start_link(children, strategy: :one_for_one)
 ```
 
 ```elixir
-# Calls on the default instance (named after the module)
+# Queue — every item is buffered in insertion order and drained to the processor
 :ok = MyApp.EventQueue.push(event)
-:ok = MyApp.StateMap.put(key, value)
-:ok = MyApp.StateMap.put_newer(key, value, version: v)
+
+# HashMap — same-key writes coalesce; only the latest value per key survives,
+# and put_newer/4 resolves conflicts by version (newer version wins)
+:ok = MyApp.StateMap.put(:user_1, %{name: "Alice"})
+:ok = MyApp.StateMap.put_newer(:user_1, %{name: "Alice"}, version: 2)
 ```
 
-The generated functions come in distinct arities: the nameless variants
-operate on the default instance, while a single full-arity variant takes
-the instance name as its first argument. To address a **dynamically
-started instance** of the same definition, use that full-arity form with
-all arguments explicit (including the trailing options):
+The processor receives the accumulated batch on each tick and runs for its
+side effects (its return value is discarded):
 
 ```elixir
-{:ok, _} = MyApp.StateMap.start_link(name: :tenant_a)
-:ok = MyApp.StateMap.put(:tenant_a, key, value, [])
-```
-
-### Direct usage (quick / dynamic)
-
-For quick experiments or fully dynamic instances, the buffer modules can
-be used directly with a runtime `:name`.
-
-#### Queue
-
-`Tidefall.Queue` buffers items in insertion order and processes them
-in batches:
-
-```elixir
-# Start a queue buffer
-{:ok, _pid} =
-  Tidefall.Queue.start_link(
-    name: :my_queue,
-    processor: fn batch -> IO.inspect(batch) end
-  )
-
-# Push items into the buffer
-:ok = Tidefall.Queue.push(:my_queue, "message1")
-:ok = Tidefall.Queue.push(:my_queue, ["message2", "message3"])
-
-# Check buffer size
-Tidefall.Queue.size(:my_queue)
-```
-
-#### HashMap
-
-`Tidefall.HashMap` buffers key-value entries with last-write-wins
-semantics. Entries with the same key overwrite previous values:
-
-```elixir
-# Start a HashMap buffer
-# The processor receives a list of %Tidefall.HashMap.Entry{} structs
-{:ok, _pid} =
-  Tidefall.HashMap.start_link(
-    name: :my_map,
-    processor: fn batch -> IO.inspect(batch) end
-  )
-
-# Put entries into the buffer
-:ok = Tidefall.HashMap.put(:my_map, :key1, "value1")
-:ok = Tidefall.HashMap.put_all(:my_map, %{key2: "value2", key3: "value3"})
-
-# Read and delete entries
-"value1" = Tidefall.HashMap.get(:my_map, :key1)
-:ok = Tidefall.HashMap.delete(:my_map, :key1)
-
-# Check buffer size
-Tidefall.HashMap.size(:my_map)
-```
-
-#### Versioned Updates
-
-For scenarios requiring "newer version wins" semantics (e.g., event sourcing,
-state synchronization), use `put_newer/4` and `put_all_newer/3`:
-
-```elixir
-# Only updates if the version is greater than the existing one
-:ok = Tidefall.HashMap.put_newer(:my_map, :key1, "v1", version: 100)
-:ok = Tidefall.HashMap.put_newer(:my_map, :key1, "v2", version: 200)  # overwrites
-:ok = Tidefall.HashMap.put_newer(:my_map, :key1, "v3", version: 50)   # ignored (50 < 200)
-
-"v2" = Tidefall.HashMap.get(:my_map, :key1)
-
-# Batch versioned updates
-entries = [
-  {:user_1, %{name: "Alice"}, 100},
-  {:user_2, %{name: "Bob"}, 200}
-]
-:ok = Tidefall.HashMap.put_all_newer(:my_map, entries)
-```
-
-### Adding to a Supervision Tree
-
-In most applications, you'll want to add a buffer as a child in your
-application's supervision tree:
-
-```elixir
-defmodule MyApp.Application do
-  use Application
-
-  @impl true
-  def start(_type, _args) do
-    children = [
-      # Queue buffer
-      {Tidefall.Queue,
-       name: :event_queue,
-       processor: &MyApp.EventProcessor.process_batch/1,
-       processing_interval: 1000,
-       partitions: 4},
-
-      # HashMap buffer
-      {Tidefall.HashMap,
-       name: :state_map,
-       processor: &MyApp.StateProcessor.process_batch/1}
-    ]
-
-    opts = [strategy: :one_for_one, name: MyApp.Supervisor]
-    Supervisor.start_link(children, opts)
-  end
+def export(batch) do
+  # Queue:   batch is [value, ...]
+  # HashMap: batch is [%Tidefall.HashMap.Entry{key: k, value: v}, ...]
+  Enum.each(batch, &MyApp.Sink.write/1)
 end
 ```
 
-The buffer will be automatically started with your application and will process
-any remaining items during graceful shutdown.
+For quick experiments or fully dynamic instances, a buffer can also be started
+directly with a runtime `:name`, e.g.
+`Tidefall.Queue.start_link(name: :my_queue, processor: &MyApp.Sink.export/1)`.
 
-### Configuration Options
-
-```elixir
-{:ok, _pid} = Tidefall.Queue.start_link(
-  name: :my_buffer,
-  partitions: 4,                        # Number of partitions (default: schedulers_online)
-  processing_interval: 1000,         # Process every second (default: 5000)
-  processing_batch_size: 100,           # Batch size for processing (default: 10)
-  processing_timeout: 5000,          # Timeout for processing tasks (default: 60000)
-  processor: &MyApp.Exporter.export/1
-)
-```
-
-See the `Tidefall` module documentation for the full list of start and
-runtime options.
+See the **[full documentation on HexDocs](https://hexdocs.pm/tidefall)** for
+the module-based and direct-usage guides, configuration (config file and
+supervision tree), choosing between Queue and HashMap, telemetry events, and
+the complete start/runtime option reference.
 
 ## Acknowledgements
 

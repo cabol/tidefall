@@ -85,39 +85,12 @@ defmodule Tidefall.Queue do
 
   ## Defining a buffer module
 
-  Instead of referring to a buffer by a runtime name, you can define a
-  dedicated module with `use Tidefall.Queue`. The module name becomes the
-  default instance name, and start options can be layered from
-  compile-time `use` opts, the application environment (`:otp_app` is
-  required), and explicit `start_link`/child-spec opts (in that order of
-  increasing precedence):
-
-      defmodule MyApp.EventQueue do
-        use Tidefall.Queue, otp_app: :my_app
-      end
-
-      # config/runtime.exs (optional — requires `otp_app:` above)
-      config :my_app, MyApp.EventQueue,
-        processor: &MyApp.Sink.process/1,
-        partitions: 4
-
-      # supervision
-      children = [MyApp.EventQueue]
-
-      # calls on the default instance (named after the module)
-      MyApp.EventQueue.push(event)
-      MyApp.EventQueue.push(event, partition_key: 1)
-      MyApp.EventQueue.size()
-
-  The generated functions come in distinct arities: the nameless
-  variants operate on the default instance (the module name), while a
-  single full-arity variant takes the instance name as its first
-  argument. To address a **dynamically started instance** of the same
-  definition, use that full-arity form with all arguments explicit
-  (including the trailing options):
-
-      MyApp.EventQueue.start_link(name: :tenant_a)
-      MyApp.EventQueue.push(:tenant_a, event, [])
+  For the recommended **module-based** pattern — `use Tidefall.Queue`,
+  where the module name becomes the default instance and start options
+  layer across compile-time `use` opts, the application environment, and
+  explicit opts — see the
+  [Module-based buffers](`m:Tidefall#module-module-based-buffers-recommended`)
+  section of `Tidefall`.
 
   ## Processor
 
