@@ -36,7 +36,64 @@ end
 
 ## Usage
 
-### Queue
+### Defining a buffer module (recommended)
+
+The recommended way to use a buffer is to define a dedicated module with
+`use Tidefall.Queue` or `use Tidefall.HashMap`. The module name becomes
+the default instance name, and start options can be layered from
+compile-time `use` opts, the application environment (`:otp_app` is
+required), and explicit `start_link`/child-spec opts (in that order of
+increasing precedence):
+
+```elixir
+defmodule MyApp.EventQueue do
+  use Tidefall.Queue, otp_app: :my_app
+end
+
+defmodule MyApp.StateMap do
+  use Tidefall.HashMap, otp_app: :my_app
+end
+```
+
+```elixir
+# config/runtime.exs (optional layer — requires `otp_app:` above)
+config :my_app, MyApp.StateMap,
+  processor: &MyApp.Sink.process/1,
+  partitions: 4
+```
+
+```elixir
+# Supervision tree
+children = [
+  MyApp.EventQueue,
+  {MyApp.StateMap, processing_interval: 5_000}
+]
+```
+
+```elixir
+# Calls on the default instance (named after the module)
+:ok = MyApp.EventQueue.push(event)
+:ok = MyApp.StateMap.put(key, value)
+:ok = MyApp.StateMap.put_newer(key, value, version: v)
+```
+
+The generated functions come in distinct arities: the nameless variants
+operate on the default instance, while a single full-arity variant takes
+the instance name as its first argument. To address a **dynamically
+started instance** of the same definition, use that full-arity form with
+all arguments explicit (including the trailing options):
+
+```elixir
+{:ok, _} = MyApp.StateMap.start_link(name: :tenant_a)
+:ok = MyApp.StateMap.put(:tenant_a, key, value, [])
+```
+
+### Direct usage (quick / dynamic)
+
+For quick experiments or fully dynamic instances, the buffer modules can
+be used directly with a runtime `:name`.
+
+#### Queue
 
 `Tidefall.Queue` buffers items in insertion order and processes them
 in batches:
@@ -57,7 +114,7 @@ in batches:
 Tidefall.Queue.size(:my_queue)
 ```
 
-### HashMap
+#### HashMap
 
 `Tidefall.HashMap` buffers key-value entries with last-write-wins
 semantics. Entries with the same key overwrite previous values:

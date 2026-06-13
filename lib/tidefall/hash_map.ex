@@ -129,6 +129,42 @@ defmodule Tidefall.HashMap do
 
       Supervisor.start_link(children, strategy: :one_for_one)
 
+  ## Defining a buffer module
+
+  Instead of referring to a buffer by a runtime name, you can define a
+  dedicated module with `use Tidefall.HashMap`. The module name becomes
+  the default instance name, and start options can be layered from
+  compile-time `use` opts, the application environment (`:otp_app` is
+  required), and explicit `start_link`/child-spec opts (in that order of
+  increasing precedence):
+
+      defmodule MyApp.StateMap do
+        use Tidefall.HashMap, otp_app: :my_app
+      end
+
+      # config/runtime.exs (optional — requires `otp_app:` above)
+      config :my_app, MyApp.StateMap,
+        processor: &MyApp.Sink.process/1,
+        partitions: 4
+
+      # supervision
+      children = [{MyApp.StateMap, processing_interval: 5_000}]
+
+      # calls on the default instance (named after the module)
+      MyApp.StateMap.put(key, value)
+      MyApp.StateMap.put_newer(key, value, version: v)
+      MyApp.StateMap.get(key)
+
+  The generated functions come in distinct arities: the nameless
+  variants operate on the default instance (the module name), while a
+  single full-arity variant takes the instance name as its first
+  argument. To address a **dynamically started instance** of the same
+  definition, use that full-arity form with all arguments explicit
+  (including the trailing options):
+
+      MyApp.StateMap.start_link(name: :tenant_a)
+      MyApp.StateMap.put(:tenant_a, key, value, [])
+
   ## Processor
 
   The processor function receives a list of `t:Tidefall.HashMap.Entry.t/0`
@@ -154,7 +190,7 @@ defmodule Tidefall.HashMap do
   import Record, only: [defrecordp: 2]
 
   alias Tidefall.Buffer
-  alias Tidefall.Buffer.Partition
+  alias Tidefall.Buffer.{Definition, Partition}
   alias Tidefall.HashMap.{Entry, Options}
 
   # Entry record stored in ETS. `:key` is the ETS lookup key (the original
@@ -206,6 +242,29 @@ defmodule Tidefall.HashMap do
   > under the hood — that's a user error, not a library bug.
   """
   @type key_hasher() :: true | (any() -> any())
+
+  ## Definition module
+
+  @doc false
+  defmacro __using__(opts) do
+    # Public operations delegated to the definition module. Each entry is
+    # `{name, leading_params, min_optional, max_optional}` — `leading_params`
+    # counts the required non-buffer/non-opts params, the optional window
+    # drives the distinct nameless arities. See `Tidefall.Buffer.Definition`.
+    ops = [
+      {:put, 2, 0, 1},
+      {:put_all, 1, 0, 1},
+      {:put_newer, 2, 0, 1},
+      {:put_all_newer, 1, 0, 1},
+      {:get, 1, 0, 2},
+      {:delete, 1, 0, 1},
+      {:size, 0, 0, 0},
+      {:update_options, 1, 0, 0},
+      {:stop, 0, 0, 2}
+    ]
+
+    Definition.define(__MODULE__, ops, opts)
+  end
 
   ## API
 

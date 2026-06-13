@@ -40,3 +40,7 @@ Elixir*
 CLAUDE.md
 /.claude
 /.cursor
+
+# Compound Engineering machine-local config
+/.compound-engineering
+/docs

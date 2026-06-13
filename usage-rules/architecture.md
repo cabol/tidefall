@@ -90,6 +90,22 @@ Routing is `:erlang.phash2(key, n_partitions)`; the
 users co-locate related entries (ordering) or spread unrelated
 ones (parallelism).
 
+### Definition modules use distinct arities, never a defaulted leading name arg
+
+`use Tidefall.Queue` / `use Tidefall.HashMap` generate delegating
+functions in **distinct arities**: nameless variants pre-bind the
+default instance (`__MODULE__`), and a single full-arity variant
+takes the instance name as its first argument with options
+**required**. This is deliberate and locked. The obvious
+"simplification" — `def f(name \\ __MODULE__, ..., opts \\ [])` —
+silently misroutes: with both ends defaulted, a call like
+`put(:k, "v", partition_key: 1)` binds `:k` as the *name* and
+shifts every other argument, with no compile error. Distinct
+arities make each call unambiguous. Do not collapse them back into
+a defaulted leading name. (Code-level details and the config
+precedence chain live in `usage-rules/tidefall.md` → "Definition
+Modules".)
+
 ## Non-Negotiables
 
 ### 1. Never read or write a partition table directly

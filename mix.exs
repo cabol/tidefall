@@ -120,14 +120,18 @@ defmodule Tidefall.MixProject do
 
   defp dialyzer do
     [
-      plt_file: {:no_warn, "priv/plts/dialyzer.plt"},
+      plt_file: {:no_warn, "priv/plts/" <> plt_file_name()},
       flags: [
         :error_handling,
+        :extra_return,
         :no_opaque,
-        :unknown,
         :no_return
       ]
     ]
+  end
+
+  defp plt_file_name do
+    "dialyzer-#{Mix.env()}-Elixir-#{System.version()}-OTP-#{System.otp_release()}.plt"
   end
 
   defp usage_rules do

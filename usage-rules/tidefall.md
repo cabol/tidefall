@@ -183,6 +183,65 @@ buffer types if semantics differ — `put` means last-write-wins in
 HashMap), and always accept a trailing `opts :: keyword()` —
 that's where `:partition_key` and future runtime options go.
 
+## Definition Modules (`use`)
+
+Each buffer type ships its own `__using__/1` (there is no single
+`use Tidefall.Buffer` facade parameterised by buffer type). `use
+Tidefall.Queue` / `use Tidefall.HashMap` generate a definition
+module whose name is the default instance name. Shared codegen
+lives in the internal `@moduledoc false` module
+`Tidefall.Buffer.Definition` (documented here, not in hexdocs).
+
+What the buffer type's `__using__/1` passes to
+`Tidefall.Buffer.Definition.define/3`: its own module, a list of
+op specs `{name, leading_params, min_optional, max_optional}`
+derived from the **real buffer-type signatures** (not invented),
+and the raw compile-time `use` opts. Add a tuple for every public
+op you want callable on the definition module.
+
+### Distinct-arity scheme — never default the leading name
+
+For a buffer-type op `f(buffer, a, b, opts \\ [])` the generator emits
+**nameless** variants that pre-bind `__MODULE__` and mirror the
+buffer type's optional params (`f(a, b)`, `f(a, b, opts)`), plus **one
+nameful** variant at the FULL arity with every param explicit and
+opts **required** (`f(name, a, b, opts)`).
+
+Do **not** "simplify" this into a single
+`def f(name \\ __MODULE__, ..., opts \\ [])`. A defaulted leading
+name plus a defaulted trailing opts silently misroutes: e.g.
+`put(:k, "v", partition_key: 1)` binds `:k` as the *name* and
+shifts everything right. Distinct arities make every call
+unambiguous at compile time. This was empirically shown to break;
+it is locked (see `architecture.md`). Generate distinct variable
+names per param so a clause never binds two args to the same name.
+
+### Config precedence
+
+Resolved in `Tidefall.Buffer.Definition.resolve_opts/2` at
+**runtime** inside `start_link`/`child_spec`, lowest → highest:
+
+1. compile-time `use` opts (injected via `def __compile_opts__`,
+   **not** a module attribute — captures like
+   `processor: &Foo.run/1` must compile naturally, and
+   `Macro.escape/1` would break them);
+2. `Application.get_env(otp_app, __MODULE__, [])` — `:otp_app` is
+   **required** in the `use` opts (`resolve_opts/2` calls
+   `Keyword.pop!/2` and raises `KeyError` without it);
+3. explicit `start_link`/child-spec opts.
+
+Then `Keyword.put_new(:name, __MODULE__)` so an explicit name
+always wins over the module-name default. The merged list flows
+into the existing `Tidefall.Buffer.Options` validation unchanged —
+do not touch that module for this.
+
+`child_spec/1` derives `id` from the resolved name
+(`opts[:name] || __MODULE__`) with `type: :supervisor`, so two
+instances of one definition coexist in one tree; `child_spec: 1`
+and `start_link: 1` are `defoverridable`. Generated functions are
+all `@doc false`; document the pattern in each buffer type's
+`@moduledoc`.
+
 ## Processor Contract
 
 A processor is a function (or MFA) invoked on every processing
