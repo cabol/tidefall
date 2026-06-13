@@ -56,6 +56,9 @@ Benchee.run(
     end,
     "put_all_newer/3" => fn {_, versioned_batch} ->
       HashMap.put_all_newer(:bench_hash_map, versioned_batch)
+    end,
+    "put_all_newer/3 [key_hasher: true]" => fn {_, versioned_batch} ->
+      HashMap.put_all_newer(:bench_hash_map, versioned_batch, key_hasher: true)
     end
   },
   inputs: %{
