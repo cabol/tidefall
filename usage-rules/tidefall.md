@@ -345,9 +345,9 @@ and shapes are public API (Non-Negotiable #2).
 |-------|------|-------------|----------|
 | `[:tidefall, :partition, :start]` | Partition starts | `system_time` | `buffer`, `partition` |
 | `[:tidefall, :partition, :stop]` | Partition terminates | `duration` | `buffer`, `partition`, `reason` |
-| `[:tidefall, :partition, :processing, :start]` | Batch processing begins | `system_time` | `buffer`, `partition` |
-| `[:tidefall, :partition, :processing, :stop]` | Batch processing completes | `duration`, `size` | `buffer`, `partition` |
-| `[:tidefall, :partition, :processing, :exception]` | Exception during processing | `duration` | `buffer`, `partition`, `kind`, `reason`, `stacktrace` |
+| `[:tidefall, :partition, :processing, :start]` | Batch processing begins | `system_time`, `monotonic_time` | `buffer`, `partition` |
+| `[:tidefall, :partition, :processing, :stop]` | Batch processing completes | `duration`, `monotonic_time`, `size` | `buffer`, `partition` |
+| `[:tidefall, :partition, :processing, :exception]` | Exception during processing | `duration`, `monotonic_time` | `buffer`, `partition`, `kind`, `reason`, `stacktrace` |
 | `[:tidefall, :partition, :processing_failed]` | Processing task `:DOWN` | `system_time` | `buffer`, `partition`, `reason` |
 
 The `:processing` triplet is driven by `:telemetry.span/3` inside

@@ -31,15 +31,22 @@ defmodule Tidefall.Buffer.Definition do
   Generates the definition-module body for `buffer_type` with the given
   per-op `specs`.
 
-  `opts` are the compile-time `use` options. Each spec is
+  `opts` are the compile-time `use` options; `:otp_app` is required and a
+  missing one raises `ArgumentError` at compile time. Each spec is
   `{name, leading_params, min_optional, max_optional}` where
   `leading_params` is the count of required non-buffer/non-opts
   params, and the optional-param window controls how many nameless
   arities are emitted. The full nameful arity is always
   `leading_params + max_optional + 1` (the `+1` is the leading name).
+  Each spec is checked against `buffer_type` at compile time — a spec
+  whose required arities are not exported raises `ArgumentError`, so a
+  miscounted tuple fails the build instead of emitting wrong delegations.
   """
   @spec define(module(), [op_spec()], keyword()) :: Macro.t()
   def define(buffer_type, specs, opts) do
+    validate_otp_app!(buffer_type, opts)
+    validate_specs!(buffer_type, specs)
+
     ops = Enum.map(specs, &op_clauses(buffer_type, &1))
 
     quote do
@@ -99,6 +106,31 @@ defmodule Tidefall.Buffer.Definition do
   end
 
   ## Private functions
+
+  # `:otp_app` is mandatory; fail at compile time with an actionable
+  # message rather than letting `resolve_opts/2` raise a bare KeyError at
+  # the first start.
+  defp validate_otp_app!(buffer_type, opts) do
+    Keyword.has_key?(opts, :otp_app) ||
+      raise ArgumentError,
+            "#{inspect(buffer_type)} requires the :otp_app option — " <>
+              "use it as `use #{inspect(buffer_type)}, otp_app: :your_app`"
+  end
+
+  # The op specs are hand-authored; assert every arity they will generate
+  # actually exists on the backend so a miscounted tuple fails the build
+  # instead of silently delegating to a wrong/absent arity.
+  defp validate_specs!(buffer_type, specs) do
+    Code.ensure_loaded?(buffer_type)
+
+    for {name, leading, min_opt, max_opt} <- specs,
+        arity <- (1 + leading + min_opt)..(1 + leading + max_opt) do
+      function_exported?(buffer_type, name, arity) ||
+        raise ArgumentError,
+              "#{inspect(buffer_type)} does not export #{name}/#{arity}, " <>
+                "required by op spec {#{inspect(name)}, #{leading}, #{min_opt}, #{max_opt}}"
+    end
+  end
 
   # Builds the def clauses for a single op: the nameless variants
   # (pre-binding `__MODULE__`) across the optional-param window, plus

@@ -22,12 +22,6 @@ defmodule Tidefall.Buffer.DefinitionTest do
     use Tidefall.HashMap, otp_app: :tidefall
   end
 
-  # A definition module WITHOUT `:otp_app` — `resolve_opts/2` raises
-  # because `:otp_app` is required.
-  defmodule NoOtpAppMap do
-    use Tidefall.HashMap
-  end
-
   # A definition module with a concrete compile-time opt, to pin the
   # lowest precedence layer (compile opts beaten by env).
   defmodule CompiledMap do
@@ -170,6 +164,80 @@ defmodule Tidefall.Buffer.DefinitionTest do
     end
   end
 
+  describe "HashMap generated arity coverage" do
+    setup do
+      self = self()
+
+      start_supervised!(
+        {StateMap, processing_interval: 5_000, partitions: 1, processor: &send(self, {:batch, &1})}
+      )
+
+      :ok
+    end
+
+    test "ok: nameless variants with trailing opts route the key correctly (no misroute)" do
+      # put/3, get/3, put_all/2, delete/2 are nameless-with-opts: the first
+      # arg is the key/entries, not an instance name.
+      assert StateMap.put(:k, "v", partition_key: 1) == :ok
+      assert StateMap.get(:k, nil, partition_key: 1) == "v"
+      assert StateMap.put_all(%{a: "1"}, partition_key: 1) == :ok
+      assert StateMap.delete(:k, partition_key: 1) == :ok
+      assert StateMap.get(:k, nil, partition_key: 1) == nil
+    end
+
+    test "ok: nameful variants delegate to a named instance" do
+      self = self()
+
+      start_supervised!(
+        {StateMap, name: :cov, partitions: 1, processor: &send(self, {:batch, &1})},
+        id: :cov
+      )
+
+      assert StateMap.put(:cov, :a, "1", []) == :ok
+      assert StateMap.put_newer(:cov, :b, "1", version: 1) == :ok
+      assert StateMap.put_all(:cov, %{c: "1"}, []) == :ok
+      assert StateMap.put_all_newer(:cov, [{:d, "1", 1}], []) == :ok
+      assert StateMap.get(:cov, :a, nil, []) == "1"
+      assert StateMap.size(:cov) == 4
+      assert StateMap.update_options(:cov, processing_interval: 50) == :ok
+      assert StateMap.delete(:cov, :a, []) == :ok
+      assert StateMap.get(:cov, :a, nil, []) == nil
+    end
+
+    test "documented sharp edge: a 2-arg named-style get reads the DEFAULT instance" do
+      # `get/2` is the nameless `get(key, default)` form — NOT `get(name, key)`.
+      # So this reads the default instance for key `:not_a_buffer` and returns
+      # the `:sentinel` default. Pins the requirement that a named instance
+      # must be addressed via the full arity (`get(name, key, default, opts)`).
+      assert StateMap.get(:not_a_buffer, :sentinel) == :sentinel
+    end
+  end
+
+  describe "Queue generated arity coverage" do
+    test "ok: nameful push/3, size/1, update_options/2, stop/3 delegate to a named instance" do
+      self = self()
+
+      start_supervised!(
+        {EventQueue,
+         name: :covq, processing_interval: 5_000, partitions: 1, processor: &send(self, {:b, &1})},
+        id: :covq
+      )
+
+      assert EventQueue.push(:covq, "x", []) == :ok
+      assert EventQueue.size(:covq) == 1
+      assert EventQueue.update_options(:covq, processing_interval: 50) == :ok
+      assert EventQueue.stop(:covq, :normal, :infinity) == :ok
+    end
+
+    test "ok: nameless stop/1 stops the default instance" do
+      self = self()
+
+      start_supervised!({EventQueue, partitions: 1, processor: &send(self, {:b, &1})})
+
+      assert EventQueue.stop(:normal) == :ok
+    end
+  end
+
   describe "config precedence" do
     test "ok: each layer beats the one below" do
       # compile-time `use` opts are the lowest layer: CompiledMap declares
@@ -191,8 +259,20 @@ defmodule Tidefall.Buffer.DefinitionTest do
       assert resolved[:name] == :explicit
     end
 
-    test "error: :otp_app is required — resolve_opts raises without it" do
-      assert_raise KeyError, fn -> Definition.resolve_opts(NoOtpAppMap, []) end
+    test "error: :otp_app is required at compile time" do
+      assert_raise ArgumentError, ~r/requires the :otp_app option/, fn ->
+        Code.eval_string("""
+        defmodule MissingOtpApp do
+          use Tidefall.HashMap
+        end
+        """)
+      end
+    end
+
+    test "error: an op spec the backend does not export fails the build" do
+      assert_raise ArgumentError, ~r/does not export bogus_op/, fn ->
+        Definition.define(Tidefall.Queue, [{:bogus_op, 0, 0, 0}], otp_app: :tidefall)
+      end
     end
   end
 

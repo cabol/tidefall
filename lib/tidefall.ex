@@ -144,6 +144,16 @@ defmodule Tidefall do
       {:ok, _} = MyApp.StateMap.start_link(name: :tenant_a)
       :ok = MyApp.StateMap.put(:tenant_a, key, value, [])
 
+  > #### Named instances require the full arity {: .warning}
+  >
+  > A named-instance call must pass **every** argument, including the
+  > trailing options. An intermediate-arity call that puts the instance
+  > name first — e.g. `MyApp.StateMap.get(:tenant_a, key)` or
+  > `MyApp.EventQueue.stop(:tenant_a)` — matches a *nameless* arity and
+  > silently operates on the **default** instance (binding `:tenant_a` as
+  > the key or reason), with no error. Always use the full-arity form
+  > shown above to address a named instance.
+
   ## Direct usage (quick / dynamic)
 
   For quick experiments or fully dynamic instances, the buffer types can
