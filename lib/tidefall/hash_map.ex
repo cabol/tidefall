@@ -639,7 +639,7 @@ defmodule Tidefall.HashMap do
   ## Private functions
 
   # Iniline common instructions
-  @compile [inline: [new_entry: 3, new_entry: 4]]
+  @compile inline: [new_entry: 3, new_entry: 4]
 
   defp new_entry(ets_key, raw_key, value) do
     entry(key: ets_key, raw_key: raw_key, value: value)

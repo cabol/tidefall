@@ -5,13 +5,24 @@ All notable changes to this project will be documented in this file.
 This project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+> [Full Changelog](https://github.com/cabol/tidefall/compare/v1.0.0-rc.0...HEAD)
+
+### Enhancements
+
+- [Tidefall.Queue] Added the `:sort_key` runtime option on `push/3` to control
+  how buffered items are ordered within a partition. Defaults to insertion
+  order; accepts a function (arity 1 applied to each item, or arity 0 evaluated
+  per item) that returns the sort term. Ordering is per partition and no item
+  is ever dropped.
+
 ## [v1.0.0-rc.0](https://github.com/cabol/tidefall/tree/v1.0.0-rc.0) (2026-06-13)
 
 ### Enhancements
 
-- `Tidefall.Queue` — insertion-ordered ETS buffer (`:ordered_set`) that
+- [Tidefall.Queue] Insertion-ordered ETS buffer (`:ordered_set`) that
   accumulates items and drains them to a processor in periodic batches.
-- `Tidefall.HashMap` — coalescing key-value buffer (`:set`, last-write-wins)
+- [Tidefall.HashMap] Coalescing key-value buffer (`:set`, last-write-wins)
   with version-aware conditional writes (`put_newer/4`, `put_all_newer/3`)
   and an optional `:key_hasher` for complex keys.
 - Module-based buffers via `use Tidefall.Queue` / `use Tidefall.HashMap` —

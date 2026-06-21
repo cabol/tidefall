@@ -403,7 +403,138 @@ defmodule Tidefall.QueueTest do
     end
   end
 
+  describe ":sort_key (runtime option)" do
+    setup do
+      self = self()
+
+      pid =
+        start_supervised!(
+          {Q,
+           name: :sort_key_test,
+           processing_interval: 100,
+           processing_batch_size: 100,
+           partitions: 1,
+           processor: &__MODULE__.test_processor(self, &1)}
+        )
+
+      {:ok, buffer: :sort_key_test, pid: pid}
+    end
+
+    test "ok: orders within a partition by an arity-1 :sort_key (value-derived)", %{buffer: buff} do
+      :ok =
+        Q.push(buff, [%{priority: 3, id: :c}, %{priority: 1, id: :a}, %{priority: 2, id: :b}],
+          sort_key: & &1.priority
+        )
+
+      assert_receive {:process_completed, batch}, @default_timeout
+      assert Enum.map(batch, & &1.priority) == [1, 2, 3]
+    end
+
+    test "ok: applies an arity-0 :sort_key per item (runtime-generated)", %{buffer: buff} do
+      # A strictly-decreasing key => items drain in reverse insertion order,
+      # proving the arity-0 function is evaluated for each item.
+      :ok =
+        Q.push(buff, [%{id: 1}, %{id: 2}, %{id: 3}],
+          sort_key: fn -> -System.unique_integer([:monotonic]) end
+        )
+
+      assert_receive {:process_completed, batch}, @default_timeout
+      assert Enum.map(batch, & &1.id) == [3, 2, 1]
+    end
+
+    test "no data loss: a colliding :sort_key never overwrites distinct items", %{buffer: buff} do
+      # Constant sort term => every item ties on the primary component; `ref`
+      # keeps the full key unique so nothing is overwritten (R3). Asserts on
+      # the delivered set/count, NOT order (tie order is unspecified).
+      :ok = Q.push(buff, Enum.map(1..20, &%{id: &1}), sort_key: fn _ -> :same end)
+
+      assert_receive {:process_completed, batch}, @default_timeout
+      assert length(batch) == 20
+      assert MapSet.new(batch, & &1.id) == MapSet.new(1..20)
+    end
+
+    test "ok: default (no :sort_key) preserves insertion order", %{buffer: buff} do
+      :ok = Q.push(buff, Enum.map(1..5, &%{id: &1}))
+
+      assert_receive {:process_completed, batch}, @default_timeout
+      assert Enum.map(batch, & &1.id) == [1, 2, 3, 4, 5]
+    end
+
+    test "ok: a single-item (non-list) push carries :sort_key through", %{buffer: buff} do
+      # Exercises the push(buffer, item, opts) clause that delegates to the
+      # list clause — confirms :sort_key is threaded, not dropped.
+      assert :ok = Q.push(buff, %{id: 1, priority: 9}, sort_key: & &1.priority)
+
+      assert_receive {:process_completed, [%{id: 1}]}, @default_timeout
+    end
+
+    test "error: a raising :sort_key propagates from push (caller-side, no rescue)", %{buffer: buff} do
+      assert_raise RuntimeError, "boom", fn ->
+        Q.push(buff, %{id: 1}, sort_key: fn _ -> raise "boom" end)
+      end
+    end
+
+    test "ok: mixed-type sort terms never crash and never lose items", %{buffer: buff} do
+      # Erlang total term order spans types (number < atom < bitstring), so
+      # mixed terms order deterministically; `ref` keeps every item distinct.
+      items = [%{id: 1, k: 7}, %{id: 2, k: :a}, %{id: 3, k: "z"}]
+      :ok = Q.push(buff, items, sort_key: & &1.k)
+
+      assert_receive {:process_completed, batch}, @default_timeout
+      assert MapSet.new(batch, & &1.id) == MapSet.new([1, 2, 3])
+    end
+  end
+
+  describe ":sort_key across partitions" do
+    setup do
+      self = self()
+
+      start_supervised!(
+        {Q,
+         name: :sort_key_multi,
+         processing_interval: 100,
+         processing_batch_size: 100,
+         partitions: 2,
+         processor: &__MODULE__.test_processor(self, &1)}
+      )
+
+      {:ok, buffer: :sort_key_multi}
+    end
+
+    test "ok: each partition's batch is independently ordered; no item lost", %{buffer: buff} do
+      items = Enum.map([3, 1, 5, 2, 6, 4], &%{id: &1, priority: &1})
+      :ok = Q.push(buff, items, partition_key: & &1.id, sort_key: & &1.priority)
+
+      # Items spread across both partitions; collect every delivered batch.
+      batches = collect_completed(6)
+
+      # No data loss across partitions.
+      delivered = batches |> List.flatten() |> MapSet.new(& &1.id)
+      assert delivered == MapSet.new(1..6)
+
+      # Ordering is per-partition: each delivered batch is priority-sorted.
+      for batch <- batches do
+        priorities = Enum.map(batch, & &1.priority)
+        assert priorities == Enum.sort(priorities)
+      end
+    end
+  end
+
   ## Helpers
+
+  # Collect {:process_completed, batch} messages until `count` items are seen,
+  # returning the batches in arrival order. Tolerates any partition split.
+  defp collect_completed(count), do: collect_completed(count, [])
+
+  defp collect_completed(count, batches) when count <= 0, do: Enum.reverse(batches)
+
+  defp collect_completed(count, batches) do
+    receive do
+      {:process_completed, batch} -> collect_completed(count - length(batch), [batch | batches])
+    after
+      @default_timeout -> flunk("timed out; #{count} items still missing")
+    end
+  end
 
   def test_processor(_pid, [%{error: true} | _]) do
     raise "task error"

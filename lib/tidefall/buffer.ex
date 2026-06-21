@@ -25,6 +25,10 @@ defmodule Tidefall.Buffer do
 
   #{Tidefall.Buffer.Options.runtime_options_docs()}
 
+  Each buffer type may accept additional runtime options of its own —
+  see `Tidefall.Queue` (e.g. `:sort_key`) and `Tidefall.HashMap`
+  (e.g. `:key_hasher`) for their full option docs.
+
   """
 
   alias Tidefall.Buffer.{Options, Partition}
@@ -165,7 +169,7 @@ defmodule Tidefall.Buffer do
 
   ## Private functions
 
-  @compile [inline: [lookup: 1]]
+  @compile inline: [lookup: 1]
   defp lookup(buffer) do
     Registry.lookup(Tidefall.Registry, buffer)
   end

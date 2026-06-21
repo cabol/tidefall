@@ -23,7 +23,7 @@ defmodule Tidefall.Queue do
      |         |         |
      v         v         v
   +-------+ +-------+ +-------+     ETS :ordered_set
-  | P 0   | | P 1   | | P N-1 |     Key: {monotonic_time, ref}
+  | P 0   | | P 1   | | P N-1 |     Key: {sort_key, ref}
   +-------+ +-------+ +-------+     Val: item
      |         |         |
      v         v         v
@@ -34,9 +34,12 @@ defmodule Tidefall.Queue do
   ```
 
   Items are routed to partitions via `phash2`, stored in
-  `:ordered_set` ETS tables keyed by `{monotonic_time, ref}`
-  (ensuring insertion-time ordering with uniqueness), and
-  periodically flushed to the processor in batches.
+  `:ordered_set` ETS tables keyed by `{sort_key, ref}`, and
+  periodically flushed to the processor in batches. `sort_key`
+  is `System.monotonic_time()` by default — giving insertion-time
+  order — or the term produced by the `:sort_key` runtime option;
+  `ref` keeps every key unique so no item is ever overwritten.
+  Ordering is **per partition** (see `:sort_key` under runtime options).
 
   ## Start options
 
@@ -44,7 +47,7 @@ defmodule Tidefall.Queue do
 
   ## Runtime options
 
-  #{Tidefall.Buffer.Options.runtime_options_docs()}
+  #{Tidefall.Queue.Options.runtime_options_docs()}
 
   ## Examples
 
@@ -112,13 +115,18 @@ defmodule Tidefall.Queue do
   import Record, only: [defrecordp: 2]
 
   alias Tidefall.Buffer
-  alias Tidefall.Buffer.{Definition, Options, Partition}
+  alias Tidefall.Buffer.{Definition, Partition}
+  alias Tidefall.Queue.Options
 
-  # Queue-specific key record (ordered by insertion time).
-  # The `timestamp` ensures order by insertion time (asc) while the
-  # `ref` makes each entry unique since there may be multiple entries
-  # with the same timestamp.
-  defrecordp(:key, timestamp: nil, ref: nil)
+  # Queue-specific key record.
+  #
+  # `sort_key` is the primary ordering term — `System.monotonic_time()`
+  # by default (insertion order), or whatever the `:sort_key` runtime
+  # option resolves to. `ref` is always retained as the uniqueness
+  # tiebreaker: since `make_ref()` is unique, distinct items never
+  # collide in the `:ordered_set`, so nothing is overwritten even when
+  # two items share the same `sort_key`.
+  defrecordp(:key, sort_key: nil, ref: nil)
 
   # Entry record stored in ETS. Queue only needs key/value; the
   # match spec returns just the value to the processor.
@@ -223,6 +231,9 @@ defmodule Tidefall.Queue do
       # Custom partition routing with fixed key (all items to same partition)
       push(:my_buffer, log_entry, partition_key: :logs)
 
+      # Custom ordering: drain by a value-derived sort key (per partition)
+      push(:my_buffer, event, sort_key: & &1.priority)
+
   """
   @spec push(buffer(), item() | [item()], keyword()) :: :ok
   def push(buffer, item_or_batch, opts \\ [])
@@ -230,13 +241,14 @@ defmodule Tidefall.Queue do
   def push(buffer, batch, opts) when is_list(batch) do
     opts = Options.validate_runtime_options!(opts)
     partition_key = Keyword.fetch!(opts, :partition_key)
+    sort_key = Keyword.get(opts, :sort_key)
 
     batch
     |> Enum.group_by(&Buffer.get_partition(buffer, partition_key, &1))
     |> Enum.each(fn {partition, items} ->
       partition
       |> Partition.current_table()
-      |> :ets.insert(Enum.map(items, &new_entry(build_key(), &1)))
+      |> :ets.insert(Enum.map(items, &new_entry(build_key(sort_key, &1), &1)))
     end)
   end
 
@@ -300,9 +312,22 @@ defmodule Tidefall.Queue do
   ## Private functions
 
   # Iniline common instructions
-  @compile [inline: [build_key: 0, new_entry: 2]]
+  @compile inline: [new_entry: 2]
 
-  defp build_key, do: key(timestamp: System.monotonic_time(), ref: make_ref())
+  # Default (no `:sort_key`): order by insertion time.
+  defp build_key(nil, _item) do
+    key(sort_key: System.monotonic_time(), ref: make_ref())
+  end
+
+  # Arity-1: derive the sort term from the item.
+  defp build_key(fun, item) when is_function(fun, 1) do
+    key(sort_key: fun.(item), ref: make_ref())
+  end
+
+  # Arity-0: generate the sort term at push time.
+  defp build_key(fun, _item) when is_function(fun, 0) do
+    key(sort_key: fun.(), ref: make_ref())
+  end
 
   defp new_entry(key, value), do: entry(key: key, value: value)
 end

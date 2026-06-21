@@ -152,6 +152,12 @@ Required steps beyond the skeleton:
 4. Add tests mirroring `test/tidefall/queue_test.exs` /
    `test/tidefall/hash_map_test.exs` — same describe blocks, same
    telemetry assertions, parameterized on your buffer module.
+5. The skeleton validates with the shared
+   `Tidefall.Buffer.Options`. If your buffer needs an
+   **impl-specific** runtime option, introduce a `YourBuffer.Options`
+   module (compose `Tidefall.Buffer.Options.runtime_opts/0` — see
+   `Tidefall.Queue.Options` / `Tidefall.HashMap.Options`) and call its
+   `validate_runtime_options!/1` in your write function instead.
 
 ### Key strategy
 
@@ -162,8 +168,14 @@ the wrong strategy is a silent bug: the buffer "works" with the
 wrong semantics.
 
 - **Insertion-ordered, every write distinct** (Queue-style):
-  monotonic + ref key, `{System.monotonic_time(), make_ref()}`.
-  Pairs with `:ordered_set`.
+  a `{sort_key, ref}` key. `sort_key` is the primary ordering term —
+  `System.monotonic_time()` by default (insertion order), or whatever
+  `Tidefall.Queue`'s `:sort_key` runtime option resolves to (arity-1
+  `fun.(item)` / arity-0 `fun.()`). **Always keep `ref` (`make_ref()`)
+  as the tiebreaker** — it guarantees uniqueness so a colliding
+  `sort_key` never overwrites a distinct item (which would silently turn
+  the queue into a coalescing map). Order among equal `sort_key`s is
+  unspecified; ordering is per partition. Pairs with `:ordered_set`.
 - **Last-write-wins by user key** (HashMap-style): the
   caller-supplied key; same key overwrites. Pairs with `:set`.
 - **Dedup by item** (Set-style): the item as both key and value;
@@ -181,7 +193,11 @@ and `update_options/2` — exactly as in the skeleton. Domain
 functions are named to match semantics (don't reuse a name across
 buffer types if semantics differ — `put` means last-write-wins in
 HashMap), and always accept a trailing `opts :: keyword()` —
-that's where `:partition_key` and future runtime options go.
+that's where runtime options go (`:partition_key` for all buffers;
+`Tidefall.Queue`'s `:sort_key`; `Tidefall.HashMap`'s `:key_hasher`).
+Impl-specific runtime options compose the shared ones via their own
+`*.Options` module (`Tidefall.Queue.Options`, `Tidefall.HashMap.Options`)
+on top of `Tidefall.Buffer.Options.runtime_opts/0`.
 
 ## Definition Modules (`use`)
 
@@ -291,17 +307,25 @@ ETS **tid** instead of a batch and **takes ownership**:
 
 ## Options
 
-All options are validated via `NimbleOptions` schemas in
-`Tidefall.Buffer.Options`, raising `NimbleOptions.ValidationError`
-at startup or update time. Four schemas: `start_opts` (passed to
-`start_link/1`), `runtime_opts` (per write call, e.g.
-`:partition_key`), `update_opts` (live via
-`update_options/2`), `auto_opts` (internal, e.g. `:module`).
+All options are validated via `NimbleOptions` schemas, raising
+`NimbleOptions.ValidationError` at startup or update time. **Shared**
+options live in `Tidefall.Buffer.Options` (four schemas: `start_opts`
+passed to `start_link/1`, `runtime_opts` per write call e.g.
+`:partition_key`, `update_opts` live via `update_options/2`,
+`auto_opts` internal e.g. `:module`). **Impl-specific** options live
+in that buffer type's own `*.Options` module
+(`Tidefall.Queue.Options`, `Tidefall.HashMap.Options`), composed on top
+of the shared lists via `NimbleOptions` (e.g. Queue's `:sort_key`,
+HashMap's `:key_hasher`).
 
 To add an option:
 
-1. Add the entry (`:type`, `:required`, `:default`, `:doc`) to
-   the matching keyword list in `Tidefall.Buffer.Options`.
+1. Pick the home. A **shared** option goes in the matching keyword
+   list in `Tidefall.Buffer.Options`. An **impl-specific** runtime
+   option goes in the buffer type's own `*.Options` module, composed
+   on top of `Tidefall.Buffer.Options.runtime_opts/0` (see
+   `Tidefall.Queue.Options` / `Tidefall.HashMap.Options`). Add the
+   entry (`:type`, `:required`, `:default`, `:doc`) there.
 2. If it's both startup-time and updatable, add it to
    `update_opts` **only** — `start_opts` already concatenates
    `update_opts`; adding the key to both lists raises a
@@ -310,9 +334,11 @@ To add an option:
    `Tidefall.Buffer.Partition` state struct (add the `defstruct`
    field).
 4. **Do not paste the option's `:doc` text inline** in
-   moduledocs — the `Tidefall.Buffer.Options.*_options_docs/0`
-   helpers render the schema into `@moduledoc` (see
-   `Tidefall.Queue` for the pattern); inlining makes docs drift.
+   moduledocs — the `*_options_docs/0` helpers render the schema
+   into `@moduledoc` (`Tidefall.Buffer.Options.*_options_docs/0` for
+   shared options, the impl's `*.Options.*_options_docs/0` for
+   impl-specific ones — see `Tidefall.Queue`); inlining makes docs
+   drift.
 
 ## ETS Match Spec Safety
 
