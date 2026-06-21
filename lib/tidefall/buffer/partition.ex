@@ -73,9 +73,12 @@ defmodule Tidefall.Buffer.Partition do
             processing_interval: nil,
             processing_timeout: nil,
             processing_batch_size: nil,
+            drain_threshold: nil,
+            drain_check_interval: nil,
             task_supervisor_name: nil,
             runner_task: nil,
             timer_ref: nil,
+            check_timer_ref: nil,
             processing?: false,
             start_time: nil
 
@@ -147,6 +150,9 @@ defmodule Tidefall.Buffer.Partition do
     processing_timeout = Keyword.fetch!(opts, :processing_timeout)
     processing_batch_size = Keyword.fetch!(opts, :processing_batch_size)
     processor = Keyword.fetch!(opts, :processor)
+    # `:drain_threshold` is optional with no default — absent means disabled.
+    drain_threshold = Keyword.get(opts, :drain_threshold)
+    drain_check_interval = Keyword.fetch!(opts, :drain_check_interval)
 
     # Generate the partition name (used as Registry key, GenServer state,
     # and a debug hint for ETS table allocations)
@@ -181,6 +187,8 @@ defmodule Tidefall.Buffer.Partition do
         processing_interval: processing_interval,
         processing_timeout: processing_timeout,
         processing_batch_size: processing_batch_size,
+        drain_threshold: drain_threshold,
+        drain_check_interval: drain_check_interval,
         task_supervisor_name: Module.concat([buffer, TaskSupervisor]),
         start_time: start_time
       }
@@ -191,7 +199,12 @@ defmodule Tidefall.Buffer.Partition do
 
   @impl true
   def handle_continue(:start_processing_timer, state) do
-    {:noreply, refresh_timer(state)}
+    state =
+      state
+      |> refresh_timer()
+      |> refresh_check_timer()
+
+    {:noreply, state}
   end
 
   @impl true
@@ -200,6 +213,7 @@ defmodule Tidefall.Buffer.Partition do
       state
       |> struct!(opts)
       |> refresh_timer()
+      |> refresh_check_timer()
 
     {:reply, :ok, state}
   end
@@ -220,6 +234,30 @@ defmodule Tidefall.Buffer.Partition do
       state
       |> process_messages()
       |> refresh_timer()
+
+    {:noreply, state}
+  end
+
+  # Size poll, but a processing cycle is already running — just reschedule.
+  def handle_info(:check_size, %__MODULE__{processing?: true} = state) do
+    {:noreply, refresh_check_timer(state)}
+  end
+
+  # Size poll: drain early if the current table reached the threshold,
+  # resetting both timers; otherwise just reschedule the next check.
+  def handle_info(
+        :check_size,
+        %__MODULE__{processing?: false, partition: partition, drain_threshold: threshold} = state
+      ) do
+    state =
+      if :ets.info(current_table(partition), :size) >= threshold do
+        state
+        |> process_messages()
+        |> refresh_timer()
+        |> refresh_check_timer()
+      else
+        refresh_check_timer(state)
+      end
 
     {:noreply, state}
   end
@@ -428,6 +466,25 @@ defmodule Tidefall.Buffer.Partition do
     timer_ref = Process.send_after(self(), :processing, interval)
 
     %{state | timer_ref: timer_ref}
+  end
+
+  # No-op when `drain_threshold` is unset: no check timer is ever started in
+  # that state, so `check_timer_ref` is always nil here — nothing to cancel.
+  # (The option can't be disabled at runtime — it's `:pos_integer`-or-absent —
+  # so there's no nil-with-a-live-timer transition to clean up.)
+  defp refresh_check_timer(%__MODULE__{drain_threshold: nil} = state) do
+    state
+  end
+
+  # Cancel any pending check timer and reschedule. The cancel matters when
+  # retuning `:drain_check_interval` at runtime (an unfired timer is replaced);
+  # mirrors `refresh_timer/1`.
+  defp refresh_check_timer(
+         %__MODULE__{check_timer_ref: ref, drain_check_interval: interval} = state
+       ) do
+    if ref, do: Process.cancel_timer(ref)
+
+    %{state | check_timer_ref: Process.send_after(self(), :check_size, interval)}
   end
 
   # `partition` is the debug hint shown by ETS introspection — no atoms

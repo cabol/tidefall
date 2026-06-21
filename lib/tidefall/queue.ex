@@ -273,8 +273,9 @@ defmodule Tidefall.Queue do
   ## Options
 
   Updatable options: `:processing_interval`, `:processing_timeout`,
-  `:processing_batch_size`. See [start options](`m:Tidefall.Queue#module-start-options`)
-  for each option's semantics.
+  `:processing_batch_size`, `:drain_threshold`, `:drain_check_interval`. See
+  [start options](`m:Tidefall.Queue#module-start-options`) for each option's
+  semantics.
 
   ## Examples
 

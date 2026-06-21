@@ -952,6 +952,32 @@ defmodule Tidefall.HashMapTest do
     end
   end
 
+  describe ":drain_threshold (early drain — shared with Queue)" do
+    test "ok: drains early when the partition reaches drain_threshold" do
+      # Parity check (R5): the size-trigger lives in the shared partition, so
+      # it must behave identically for HashMap. Long processing_interval
+      # isolates the size trigger from the timer.
+      self = self()
+
+      start_supervised!(
+        {HashMap,
+         name: :hm_drain,
+         processing_interval: 60_000,
+         processing_batch_size: 100,
+         partitions: 1,
+         drain_threshold: 5,
+         drain_check_interval: 50,
+         processor: &__MODULE__.test_processor(self, &1)},
+        id: :hm_drain
+      )
+
+      for i <- 1..5, do: :ok = HashMap.put(:hm_drain, {:k, i}, i)
+
+      assert_receive {:process_completed, batch}, @default_timeout
+      assert length(batch) == 5
+    end
+  end
+
   ## Helpers
 
   # HashMap processor receives %Entry{} structs in the batch.

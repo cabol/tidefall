@@ -15,6 +15,12 @@ This project adheres to
   order; accepts a function (arity 1 applied to each item, or arity 0 evaluated
   per item) that returns the sort term. Ordering is per partition and no item
   is ever dropped.
+- [Tidefall.Buffer] Added the `:drain_threshold` and `:drain_check_interval`
+  options (available on both `Tidefall.Queue` and `Tidefall.HashMap`) to drain
+  a partition early once it reaches `:drain_threshold` items, instead of
+  waiting for the next `:processing_interval` tick — draining on whichever
+  fires first. Per-partition, lossless (an early-flush trigger, not a cap), and
+  off by default.
 
 ## [v1.0.0-rc.0](https://github.com/cabol/tidefall/tree/v1.0.0-rc.0) (2026-06-13)
 

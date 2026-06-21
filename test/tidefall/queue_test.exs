@@ -520,6 +520,89 @@ defmodule Tidefall.QueueTest do
     end
   end
 
+  describe ":drain_threshold (early drain)" do
+    # Long processing_interval so the timer can't drain during the test —
+    # isolates the size trigger. Short drain_check_interval for responsiveness.
+    defp start_drain_buffer(name, extra) do
+      self = self()
+
+      start_supervised!(
+        {Q,
+         [
+           name: name,
+           processing_interval: 60_000,
+           processing_batch_size: 100,
+           partitions: 1,
+           processor: &__MODULE__.test_processor(self, &1)
+         ] ++ extra},
+        id: name
+      )
+
+      name
+    end
+
+    test "ok: drains early when the partition reaches drain_threshold" do
+      buff = start_drain_buffer(:drain_early, drain_threshold: 5, drain_check_interval: 50)
+
+      :ok = Q.push(buff, Enum.map(1..5, &%{id: &1}))
+
+      assert_receive {:process_completed, batch}, @default_timeout
+      assert length(batch) == 5
+    end
+
+    test "ok: does not drain early below drain_threshold" do
+      buff = start_drain_buffer(:drain_below, drain_threshold: 5, drain_check_interval: 50)
+
+      :ok = Q.push(buff, Enum.map(1..4, &%{id: &1}))
+
+      refute_receive {:process_completed, _}, 500
+    end
+
+    test "ok: no early drain when drain_threshold is unset (default behavior)" do
+      buff = start_drain_buffer(:drain_off, [])
+
+      :ok = Q.push(buff, Enum.map(1..20, &%{id: &1}))
+
+      refute_receive {:process_completed, _}, 500
+    end
+
+    test "ok: keeps draining early on subsequent fills" do
+      buff = start_drain_buffer(:drain_reset, drain_threshold: 5, drain_check_interval: 50)
+
+      :ok = Q.push(buff, Enum.map(1..5, &%{id: &1}))
+      assert_receive {:process_completed, b1}, @default_timeout
+      assert length(b1) == 5
+
+      :ok = Q.push(buff, Enum.map(6..10, &%{id: &1}))
+      assert_receive {:process_completed, b2}, @default_timeout
+      assert length(b2) == 5
+    end
+
+    test "ok: drain_threshold can be enabled at runtime via update_options" do
+      buff = start_drain_buffer(:drain_runtime, [])
+
+      assert Q.update_options(buff, drain_threshold: 5, drain_check_interval: 50) == :ok
+
+      :ok = Q.push(buff, Enum.map(1..5, &%{id: &1}))
+
+      assert_receive {:process_completed, batch}, @default_timeout
+      assert length(batch) == 5
+    end
+
+    test "ok: a drain in flight is not re-triggered by the size poll (guard)" do
+      # Pushing well past the threshold with a slow processor means the check
+      # timer fires several times *during* the drain; the processing? guard
+      # must prevent a second drain. Expect exactly one batch of all 10 items.
+      buff = start_drain_buffer(:drain_guard, drain_threshold: 5, drain_check_interval: 50)
+
+      :ok = Q.push(buff, Enum.map(1..10, &%{sleep_ms: 200, id: &1}))
+
+      assert_receive {:process_completed, batch}, @default_timeout
+      assert length(batch) == 10
+      refute_receive {:process_completed, _}, 300
+    end
+  end
+
   ## Helpers
 
   # Collect {:process_completed, batch} messages until `count` items are seen,

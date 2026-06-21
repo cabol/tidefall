@@ -52,6 +52,41 @@ defmodule Tidefall.Buffer.Options do
           table** beyond the task's lifetime, call `:ets.give_away/3` to
           hand it off to another process before returning.
       """
+    ],
+    drain_threshold: [
+      type: :pos_integer,
+      required: false,
+      doc: """
+      Optional **per-partition** item count that triggers an early drain.
+      When a partition's current table reaches this many items, it drains
+      immediately instead of waiting for the next `:processing_interval` tick
+      — a partition drains on whichever fires first, size or timer.
+
+      Unset (the default) means disabled: partitions drain on the interval
+      only, exactly as before. This is a **lossless** early-flush trigger,
+      **not a cap** — nothing is dropped or evicted, and a partition's table
+      may briefly exceed the threshold between size checks or under concurrent
+      writes.
+
+      Size is checked on the `:drain_check_interval` poll inside the partition,
+      never on the write path.
+      """
+    ],
+    drain_check_interval: [
+      type: :pos_integer,
+      required: false,
+      default: :timer.seconds(1),
+      doc: """
+      How often (in milliseconds) each partition polls its current table size
+      to decide whether to drain early. Only has an effect when
+      `:drain_threshold` is set. Defaults to `1000`.
+
+      Keep this **below** `:processing_interval` — otherwise the interval timer
+      usually drains first and the size trigger rarely fires. The check is one
+      `:ets.info(table, :size)` per partition per interval, run inside the
+      partition process (off the write path), so its cost is negligible at this
+      frequency.
+      """
     ]
   ]
 

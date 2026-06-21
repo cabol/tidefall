@@ -340,6 +340,17 @@ To add an option:
    impl-specific ones — see `Tidefall.Queue`); inlining makes docs
    drift.
 
+`:drain_threshold` + `:drain_check_interval` (both shared `update_opts`)
+are a worked example. When `:drain_threshold` is set, a partition runs a
+**second timer** alongside the processing timer — `refresh_check_timer/1`
+schedules a `:check_size` poll every `:drain_check_interval` that drains
+early once the current table reaches the threshold (whichever fires first,
+size or interval). It is lossless (early-flush, not a cap), per-partition,
+and polled inside the partition (never on the write path). When
+`:drain_threshold` is unset, `refresh_check_timer/1` is a no-op — no second
+timer, no `:ets.info(size)` reads. Mirror `refresh_timer/1` if you add
+another timer-driven trigger.
+
 ## ETS Match Spec Safety
 
 When building match specs (especially for `select_replace`):
