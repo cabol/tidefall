@@ -5,8 +5,8 @@ All notable changes to this project will be documented in this file.
 This project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
-> [Full Changelog](https://github.com/cabol/tidefall/compare/v1.0.0-rc.0...HEAD)
+## [v1.0.0-rc.1](https://github.com/cabol/tidefall/tree/v1.0.0-rc.1) (2026-06-21)
+> [Full Changelog](https://github.com/cabol/tidefall/compare/v1.0.0-rc.0...v1.0.0-rc.1)
 
 ### Enhancements
 
