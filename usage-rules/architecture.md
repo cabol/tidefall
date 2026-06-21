@@ -90,6 +90,19 @@ Routing is `:erlang.phash2(key, n_partitions)`; the
 users co-locate related entries (ordering) or spread unrelated
 ones (parallelism).
 
+### Telemetry events are prefixed `[:tidefall, :partition, ...]`
+
+Events fire **per partition** (each partition emits its own lifecycle
+and processing events), and the measurement metadata carries both
+`buffer` and `partition`. The `:partition` segment is deliberate and
+settled: it honestly signals that one buffer drain produces N events
+(one per partition), and consumers filter/aggregate by the `buffer`
+metadata key. `[:tidefall, :buffer, ...]` was considered and rejected —
+it would imply buffer-level aggregation that does not happen (the
+events are not summed across partitions), making it *more* misleading,
+not less. Do not rename the prefix; per Non-Negotiable #2 it is a
+breaking change after 1.0.
+
 ### Definition modules use distinct arities, never a defaulted leading name arg
 
 `use Tidefall.Queue` / `use Tidefall.HashMap` generate delegating

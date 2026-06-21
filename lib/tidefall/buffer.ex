@@ -138,11 +138,17 @@ defmodule Tidefall.Buffer do
   """
   @spec update_options(buffer(), keyword()) :: :ok
   def update_options(buffer, opts) do
-    opts = Options.validate_update_options!(opts)
+    # `validate_update_options!` type-checks AND injects defaults for omitted
+    # keys; keep only the keys the caller actually supplied so a partial update
+    # changes just those options instead of resetting the rest to defaults.
+    changes =
+      opts
+      |> Options.validate_update_options!()
+      |> Keyword.take(Keyword.keys(opts))
 
     buffer
     |> lookup()
-    |> Enum.each(&Partition.update_options(elem(&1, 0), opts))
+    |> Enum.each(&Partition.update_options(elem(&1, 0), changes))
   end
 
   ## Shared routing helpers (used by Queue, HashMap, etc.)

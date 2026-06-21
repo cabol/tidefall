@@ -306,6 +306,32 @@ defmodule Tidefall.QueueTest do
       assert length(batch2) == 2
     end
 
+    test "ok: a partial update preserves options it did not set" do
+      self = self()
+
+      start_supervised!(
+        {Q,
+         name: :partial_update,
+         processing_interval: 60_000,
+         processing_batch_size: 2,
+         partitions: 1,
+         processor: &__MODULE__.test_processor(self, &1)},
+        id: :partial_update
+      )
+
+      # Change ONLY the interval; processing_batch_size (2) must survive the
+      # partial update rather than resetting to its default (10).
+      assert Q.update_options(:partial_update, processing_interval: 100) == :ok
+
+      assert Q.push(:partial_update, Enum.map(1..4, &%{id: &1})) == :ok
+
+      # Drains in batches of 2 (preserved), not one batch of 4.
+      assert_receive {:process_completed, b1}, @default_timeout
+      assert_receive {:process_completed, b2}, @default_timeout
+      assert length(b1) == 2
+      assert length(b2) == 2
+    end
+
     test "error: raises on invalid options", %{buffer: buff} do
       assert_raise NimbleOptions.ValidationError, fn ->
         Q.update_options(buff, processing_interval: -1)

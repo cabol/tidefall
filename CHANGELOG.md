@@ -22,6 +22,13 @@ This project adheres to
   fires first. Per-partition, lossless (an early-flush trigger, not a cap), and
   off by default.
 
+### Bug Fixes
+
+- [Tidefall.Buffer] Fixed `update_options/2` so a partial update changes only
+  the options you pass; previously, omitting an option silently reset it to its
+  default (e.g. updating `:processing_interval` also reset
+  `:processing_batch_size` to `10`).
+
 ## [v1.0.0-rc.0](https://github.com/cabol/tidefall/tree/v1.0.0-rc.0) (2026-06-13)
 
 ### Enhancements
