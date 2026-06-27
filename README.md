@@ -15,9 +15,9 @@ configurable processor function at regular intervals.
 
 It ships with two concrete buffer implementations:
 
-- **`Tidefall.Queue`** — Ordered queue buffer (insertion-time ordered,
-  backed by `:ordered_set` ETS tables). Every pushed item is buffered and
-  drained to the processor.
+- **`Tidefall.Queue`** — Ordered queue buffer (insertion-time ordered by
+  default, with an optional `:sort_key`; backed by `:ordered_set` ETS tables).
+  Every pushed item is buffered and drained to the processor.
 - **`Tidefall.HashMap`** — Coalescing key-value buffer (last-write-wins
   semantics, backed by `:set` ETS tables). Same-key writes coalesce, so only
   the latest value per key survives to the next tick.
@@ -39,8 +39,10 @@ end
 
 ## 🚀 Usage
 
-The recommended pattern is to define a dedicated buffer module and add it to
-your supervision tree. The module name becomes the default instance name:
+There are two ways to use a buffer; pick by how your buffers are shaped. When
+you have a **fixed, well-known set of buffers** that live under your app's
+namespace, define a dedicated buffer module and add it to your supervision
+tree — the module name becomes the default instance name:
 
 ```elixir
 defmodule MyApp.EventQueue do
@@ -83,8 +85,10 @@ def export(batch) do
 end
 ```
 
-For quick experiments or fully dynamic instances, a buffer can also be started
-directly with a runtime `:name`, e.g.
+When your buffers are **dynamic** instead — created on demand (e.g. one per
+tenant), many instances of the same type, or named at runtime — start them
+directly with a runtime `:name`, which gives you full control over naming and
+lifecycle, e.g.
 `Tidefall.Queue.start_link(name: :my_queue, processor: &MyApp.Sink.export/1)`.
 
 See the **[full documentation on HexDocs](https://hexdocs.pm/tidefall)** for

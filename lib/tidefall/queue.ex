@@ -88,11 +88,11 @@ defmodule Tidefall.Queue do
 
   ## Defining a buffer module
 
-  For the recommended **module-based** pattern — `use Tidefall.Queue`,
+  For the **module-based** pattern — `use Tidefall.Queue`,
   where the module name becomes the default instance and start options
   layer across compile-time `use` opts, the application environment, and
   explicit opts — see the
-  [Module-based buffers](`m:Tidefall#module-module-based-buffers-recommended`)
+  [Module-based buffers](`m:Tidefall#module-module-based-buffers`)
   section of `Tidefall`.
 
   ## Processor

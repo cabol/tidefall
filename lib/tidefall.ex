@@ -25,8 +25,8 @@ defmodule Tidefall do
     * [Quick start](#module-quick-start) — start a buffer in a few lines
     * [The processor](#module-the-processor) — when it runs, batching, failure, drain
     * [Choosing a buffer type](#module-choosing-a-buffer-type) — Queue vs. HashMap
-    * [Module-based buffers](#module-module-based-buffers-recommended) — the recommended pattern
-    * [Direct usage](#module-direct-usage-quick-dynamic) — quick or fully dynamic instances
+    * [Module-based buffers](#module-module-based-buffers) — a fixed set under your app namespace
+    * [Direct usage](#module-direct-usage-quick-dynamic) — dynamic or runtime-named instances
     * [Configuration](#module-configuration) — config file and supervision tree
     * [Testing](#module-testing) — testing code that writes to a buffer
     * [Architecture](#module-architecture) — supervision tree and partitions
@@ -61,7 +61,9 @@ defmodule Tidefall do
   accumulated batch. What to know before relying on it:
 
     * **Timing** — a tick runs every `:processing_interval` milliseconds
-      (default `5_000`).
+      (default `5_000`). With `:drain_threshold` set, a partition also drains
+      early once it reaches that many items — whichever fires first, size or
+      the timer.
     * **Batch size** — the processor is called with up to
       `:processing_batch_size` items (default `10`), so a tick holding more
       items than that invokes the processor **multiple times**. Raise
@@ -99,13 +101,14 @@ defmodule Tidefall do
       counters. Use `Tidefall.HashMap.put_newer/4` when conflict
       resolution must respect an explicit version (newer version wins).
 
-  ## Module-based buffers (recommended)
+  ## Module-based buffers
 
-  The recommended way to use a buffer is to define a dedicated module with
-  `use Tidefall.Queue` or `use Tidefall.HashMap`. The module name becomes
-  the default instance name, and start options are layered from
-  compile-time `use` opts, the application environment, and explicit
-  `start_link`/child-spec opts (in that order of increasing precedence):
+  Define a dedicated module with `use Tidefall.Queue` or
+  `use Tidefall.HashMap` when you have a **fixed, well-known set of buffers**
+  that live under your app's namespace. The module name becomes the default
+  instance name, and start options are layered from compile-time `use` opts,
+  the application environment, and explicit `start_link`/child-spec opts
+  (in that order of increasing precedence):
 
       defmodule MyApp.EventQueue do
         use Tidefall.Queue, otp_app: :my_app
@@ -156,8 +159,11 @@ defmodule Tidefall do
 
   ## Direct usage (quick / dynamic)
 
-  For quick experiments or fully dynamic instances, the buffer types can
-  be used directly with a runtime `:name` — no definition module required:
+  When buffers are **dynamic** — created on demand (e.g. one per tenant),
+  many instances of the same type, or named at runtime — use the buffer
+  types directly with a runtime `:name`, for full control over naming and
+  lifecycle with no definition module required. This is also the quickest
+  path for experiments:
 
       {:ok, _pid} =
         Tidefall.Queue.start_link(
