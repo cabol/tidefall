@@ -8,7 +8,7 @@ defmodule Tidefall.MixProject do
     [
       app: :tidefall,
       version: @version,
-      elixir: "~> 1.17",
+      elixir: "~> 1.14",
       elixirc_paths: elixirc_paths(Mix.env()),
       aliases: aliases(),
       deps: deps(),
