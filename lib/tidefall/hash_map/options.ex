@@ -8,15 +8,15 @@ defmodule Tidefall.HashMap.Options do
   # `:partition_key`).
   hm_runtime_opts = [
     key_hasher: [
-      type: {:or, [{:in, [true]}, {:fun, 1}]},
-      required: false,
+      type: {:or, [:boolean, {:fun, 1}]},
+      default: false,
       doc: """
       Optional key hashing for complex keys that don't survive ETS
       match-spec equality (e.g. keys containing maps).
 
       Can be one of:
 
-        * Omitted (default) — no hashing; the key is stored and
+        * `false` (default) — no hashing; the key is stored and
           looked up as-is.
         * `true` — hash the key with `:erlang.phash2/1`. Fast, but
           28-bit and so collision-prone; use only when collisions

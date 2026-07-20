@@ -208,7 +208,7 @@ defmodule Tidefall.HashMap do
   @typedoc """
   Key-hashing option accepted by every HashMap operation:
 
-    * `nil` (default) — no hashing; the user's key is stored and
+    * `false` (default) — no hashing; the user's key is stored and
       looked up as-is.
     * `true` — hash the key with `:erlang.phash2/1` before
       storage/lookup. Fast, **but 28-bit and so collision-prone**;
@@ -228,7 +228,7 @@ defmodule Tidefall.HashMap do
   > writes for the same logical key produces two distinct entries
   > under the hood — that's a user error, not a library bug.
   """
-  @type key_hasher() :: true | (any() -> any())
+  @type key_hasher() :: boolean() | (any() -> any())
 
   ## Definition module
 
@@ -656,7 +656,7 @@ defmodule Tidefall.HashMap do
   # Resolves the `{ets_key, raw_key}` pair for storage/lookup.
   # `raw_key` is `nil` for non-hashed entries — distinguishing them
   # from hashed entries in the match spec.
-  defp resolve_keys(key, nil), do: {key, nil}
+  defp resolve_keys(key, false), do: {key, nil}
   defp resolve_keys(key, true), do: {:erlang.phash2(key), key}
   defp resolve_keys(key, hasher) when is_function(hasher, 1), do: {hasher.(key), key}
 

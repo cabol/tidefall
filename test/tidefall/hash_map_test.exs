@@ -626,6 +626,16 @@ defmodule Tidefall.HashMapTest do
       assert HashMap.get(buff, key, nil, key_hasher: true) == nil
     end
 
+    test "ok: key_hasher: false is interchangeable with omitting it", %{buffer: buff} do
+      # Written without the option, read back with an explicit false.
+      assert HashMap.put(buff, :k1, "v1") == :ok
+      assert HashMap.get(buff, :k1, nil, key_hasher: false) == "v1"
+
+      # Written with an explicit false, read back without the option.
+      assert HashMap.put(buff, :k2, "v2", key_hasher: false) == :ok
+      assert HashMap.get(buff, :k2) == "v2"
+    end
+
     test "ok: put_newer round-trip with key_hasher: true and map keys", %{buffer: buff} do
       key = %{tenant: "acme", id: 42}
 
