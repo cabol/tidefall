@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 This project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v1.0.0](https://github.com/cabol/tidefall/tree/v1.0.0) (2026-08-07)
+> [Full Changelog](https://github.com/cabol/tidefall/compare/v1.0.0-rc.1...v1.0.0)
+
+First stable release. The public API is now covered by semantic
+versioning — breaking changes wait for a major release.
+
+### Enhancements
+
+- [Tidefall.HashMap] `:key_hasher` now accepts `false` in addition to
+  `true` and a function of arity 1, and defaults to `false`. Passing
+  `false` is behaviorally identical to omitting the option (no hashing),
+  which gives wrappers that default hashing on a way to turn it off
+  per-call — `Keyword.merge/2` can override a key but cannot unset one.
+- Lowered the minimum Elixir requirement from 1.17 to 1.14. The CI
+  matrix covers 1.14 through 1.20.
+
+### Documentation
+
+- [Tidefall.Buffer] Reworded `:drain_check_interval` to document the
+  guarantee it provides (a bound on how long a partition that has
+  reached `:drain_threshold` waits before draining) rather than the
+  polling mechanism that implements it. No behavior change.
+- Polished the buffer usage guidance and option docs.
+
 ## [v1.0.0-rc.1](https://github.com/cabol/tidefall/tree/v1.0.0-rc.1) (2026-06-21)
 > [Full Changelog](https://github.com/cabol/tidefall/compare/v1.0.0-rc.0...v1.0.0-rc.1)
 
