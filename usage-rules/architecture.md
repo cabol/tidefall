@@ -75,6 +75,22 @@ telemetry span. This is a deliberate optimization (idle buffers
 cost nothing), not an oversight — don't add "always flush" or
 size-0 spans.
 
+### Size-triggered drain polls, never counts on the write path
+
+`:drain_threshold` is evaluated by a periodic `:ets.info(table,
+:size)` check inside the partition process (on the
+`:drain_check_interval` cadence), not by a counter maintained as
+writes happen. A shared write-path counter (`:counters`, or an
+`:ets.update_counter/3` row) was considered and rejected: it puts
+cross-process contention back on the hot path — the exact cost
+partitioning and `write_concurrency` exist to remove — trading an
+O(1) read for per-write coordination. Two consequences are
+deliberate, not defects: a table may briefly exceed the threshold
+between checks (so the trigger is an early flush, **not a cap**),
+and when `:drain_threshold` is unset no check timer is ever
+started, so disabled costs nothing. Do not "optimize" this into a
+write-path counter.
+
 ### Synchronous drain on shutdown
 
 The partition traps exits in `init/1` so `terminate/2` runs on

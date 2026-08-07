@@ -77,13 +77,13 @@ defmodule Tidefall.Buffer.Options do
       required: false,
       default: :timer.seconds(1),
       doc: """
-      How often (in milliseconds) each partition polls its current table size
-      to decide whether to drain early. Only has an effect when
-      `:drain_threshold` is set. Defaults to `1000`.
+      Bounds how long (in milliseconds) a partition that has reached
+      `:drain_threshold` can wait before it actually drains. Only has an
+      effect when `:drain_threshold` is set. Defaults to `1000`.
 
       Keep this **below** `:processing_interval` — otherwise the interval timer
-      usually drains first and the size trigger rarely fires. The check is one
-      `:ets.info(table, :size)` per partition per interval, run inside the
+      usually drains first and the size trigger rarely fires. Size is measured
+      with one `:ets.info(table, :size)` per partition per interval, inside the
       partition process (off the write path), so its cost is negligible at this
       frequency.
       """
