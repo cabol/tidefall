@@ -672,27 +672,46 @@ defmodule Tidefall.HashMap do
   end
 
   defp do_put_newer(partition, entries) do
+    # The current table is resolved for each entry rather than once for the
+    # whole batch: the partition swaps it on every processing tick and the
+    # task draining the previous table deletes it, so a reference held across
+    # the batch can point at a deleted table halfway through.
+    Enum.each(entries, &put_newer_entry(partition, &1, 1))
+  end
+
+  defp put_newer_entry(partition, entry, retries) do
     table = Partition.current_table(partition)
 
-    Enum.each(entries, fn entry(
-                            key: ets_key,
-                            raw_key: raw_key,
-                            value: value,
-                            version: version
-                          ) = entry ->
-      # Try to insert as a new entry first
-      case :ets.insert_new(table, entry) do
-        true ->
-          # Entry was new, we're done
-          :ok
+    try do
+      insert_newer(table, entry)
+    rescue
+      # The table was swapped and deleted between the lookup and the write:
+      # write the entry to the table that replaced it.
+      e in ArgumentError ->
+        if retries > 0 and :ets.info(table, :id) == :undefined do
+          put_newer_entry(partition, entry, retries - 1)
+        else
+          reraise e, __STACKTRACE__
+        end
+    end
+  end
 
-        false ->
-          # Entry exists; try a conditional update via select_replace
-          match_spec = replace_match_spec(ets_key, raw_key, value, version)
+  defp insert_newer(
+         table,
+         entry(key: ets_key, raw_key: raw_key, value: value, version: version) = entry
+       ) do
+    # Try to insert as a new entry first
+    case :ets.insert_new(table, entry) do
+      true ->
+        # Entry was new, we're done
+        :ok
 
-          :ets.select_replace(table, match_spec)
-      end
-    end)
+      false ->
+        # Entry exists; try a conditional update via select_replace
+        match_spec = replace_match_spec(ets_key, raw_key, value, version)
+
+        :ets.select_replace(table, match_spec)
+    end
   end
 
   defp replace_match_spec(ets_key, raw_key, value, version) do
@@ -702,8 +721,7 @@ defmodule Tidefall.HashMap do
     #
     # In match spec bodies, bare tuples are interpreted as operations/function
     # calls, NOT as literal data. We wrap ets_key, raw_key, and value with
-    # ms_literal/1 so tuples use the {{...}} constructor form and maps use
-    # {:const, map} that ETS understands. Version is restricted to
+    # {:const, term} so ETS copies them as they are. Version is restricted to
     # integer/atom/binary (match-spec literals; no wrapping needed).
     [
       {
@@ -718,40 +736,22 @@ defmodule Tidefall.HashMap do
         # Guard (update only if): new_version > existing_version
         [{:>, version, :"$1"}],
         # Result: the new entry with incremented updates counter
+        #
+        # In match spec bodies, bare tuples are interpreted as operations, not
+        # data, and atoms such as :"$1" as variables. {:const, term} embeds
+        # the term whole as a literal: rebuilding it element by element made
+        # select_replace exceed the match spec size limit (SystemLimitError)
+        # on values holding a few thousand elements, and slowed every update.
         [
           {entry(
-             key: ms_literal(ets_key),
-             raw_key: ms_literal(raw_key),
-             value: ms_literal(value),
+             key: {:const, ets_key},
+             raw_key: {:const, raw_key},
+             value: {:const, value},
              version: version,
              updates: {:+, :"$2", 1}
            )}
         ]
       }
     ]
-  end
-
-  # Wraps a term so it is safe to use as a literal in a match spec body.
-  # In match spec bodies, bare tuples are interpreted as operations — not
-  # data. The {{...}} form tells ETS to construct a tuple from its elements.
-  # Maps use {:const, map} to be treated as opaque literals.
-  defp ms_literal(value) when is_tuple(value) do
-    value
-    |> Tuple.to_list()
-    |> Enum.map(&ms_literal/1)
-    |> List.to_tuple()
-    |> then(&{&1})
-  end
-
-  defp ms_literal(value) when is_list(value) do
-    Enum.map(value, &ms_literal/1)
-  end
-
-  defp ms_literal(value) when is_map(value) do
-    {:const, value}
-  end
-
-  defp ms_literal(value) do
-    value
   end
 end
