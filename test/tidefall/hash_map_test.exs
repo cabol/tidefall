@@ -750,6 +750,23 @@ defmodule Tidefall.HashMapTest do
                      @default_timeout
     end
 
+    test "ok: processor receives a nil key as nil, not the hash", %{buffer: buff} do
+      # Each hasher stores nil under a different ETS key, so both entries stay.
+      assert HashMap.put(buff, nil, "v1", key_hasher: true) == :ok
+
+      assert HashMap.put_newer(buff, nil, "v2",
+               version: 100,
+               key_hasher: &:erlang.term_to_binary/1
+             ) == :ok
+
+      assert_receive {:process_completed, batch}, @default_timeout
+
+      assert Enum.sort_by(batch, & &1.value) == [
+               %Entry{key: nil, value: "v1", version: 0, updates: 0},
+               %Entry{key: nil, value: "v2", version: 100, updates: 0}
+             ]
+    end
+
     test "ok: lambda hasher (sha256 over term_to_binary)", %{buffer: buff} do
       hasher = fn k -> :crypto.hash(:sha256, :erlang.term_to_binary(k)) end
       key = %{complex: %{nested: :term}}
