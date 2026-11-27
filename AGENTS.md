@@ -22,6 +22,10 @@ file).
 4. `usage_rules:elixir` / `usage_rules:otp` — generic
    Elixir/OTP rules (imported below).
 
+`usage-rules/` ships in the hex package, but it's written for
+agents working on Tidefall, so it can name test files and
+helpers (`test/support/`, `Tidefall.TestBuffer`, ...).
+
 ## Validation
 
 The canonical gate is `mix test.ci`: `deps.unlock
