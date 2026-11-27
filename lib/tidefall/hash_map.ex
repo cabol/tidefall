@@ -61,15 +61,27 @@ defmodule Tidefall.HashMap do
 
   ### Complex keys and `:key_hasher`
 
-  ETS match specs (used by `put_newer/4`/`put_all_newer/3`)
-  cannot equality-compare arbitrary terms in the match head — in
-  particular, **maps anywhere in the key** fall back to subset
-  semantics and may match the wrong row. Plain `put/4` and
-  `put_all/3` are unaffected (they do not use match specs);
-  `:key_hasher` is only needed once you use `put_newer/4` or
-  `put_all_newer/3` on a complex key. When you do, pass the **same**
-  `:key_hasher` on every operation that touches that key — including
-  `put/4`, `get/4`, and `delete/3` — otherwise hashed and non-hashed
+  `put_newer/4` and `put_all_newer/3` update an existing key through
+  an ETS match spec, and the key goes into the match head as a
+  pattern. There, a map matches by subset, and the atoms `:_`,
+  `:"$1"`, `:"$2"`, and so on are a wildcard and variables. Because
+  of that, a key containing a map or one of those atoms raises
+  `ArgumentError` on the second versioned write. For example:
+
+      put_newer(:my_buffer, %{id: 1}, "v1", version: 1)
+      #=> :ok
+
+      put_newer(:my_buffer, %{id: 1}, "v2", version: 2)
+      #=> ** (ArgumentError)
+
+  `put/4` and `put_all/3` don't use match specs, so they work with
+  any key. To use `put_newer/4` and `put_all_newer/3` with these
+  keys, pass `:key_hasher`, so the stored key is the hash instead.
+  The hasher must return a plain term, like an integer or a binary
+  (`true` and the sha256 example both do). If it returns a map or
+  the key itself, you get the same error. Also, pass the **same**
+  `:key_hasher` on every operation that touches that key, including
+  `put/4`, `get/4`, and `delete/3`. Otherwise, hashed and non-hashed
   writes produce two distinct entries for one logical key (see the
   per-function docs for the option).
 
