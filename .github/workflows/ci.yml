@@ -30,12 +30,14 @@ jobs:
           - elixir: 1.18.x
             otp: 28.x
             os: 'ubuntu-latest'
+          # Hex only builds OTP 26+ for ubuntu-latest (26.04), so the OTP 25
+          # legs run on 24.04.
           - elixir: 1.17.x
             otp: 25.x
-            os: 'ubuntu-latest'
+            os: 'ubuntu-24.04'
           - elixir: 1.14.x
             otp: 25.x
-            os: 'ubuntu-latest'
+            os: 'ubuntu-24.04'
 
     env:
       GITHUB_TOKEN: '${{ secrets.GITHUB_TOKEN }}'
