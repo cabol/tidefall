@@ -320,8 +320,8 @@ defmodule Tidefall.HashMap do
       # Simple put
       put(:my_buffer, :key1, "val1")
 
-      # With custom partition routing
-      put(:my_buffer, :key1, "val1", partition_key: fn {k, _v} -> k end)
+      # With custom partition routing (the function receives the key)
+      put(:my_buffer, {"acme", 42}, "val1", partition_key: fn {tenant, _id} -> tenant end)
 
       # With key hashing (key is a map — store under a hash; processor
       # still receives the original map as the entry's :key)
@@ -356,8 +356,8 @@ defmodule Tidefall.HashMap do
       # Using a list of tuples
       put_all(:my_buffer, [{:key1, "val1"}, {:key2, "val2"}])
 
-      # With custom partition routing
-      put_all(:my_buffer, %{key1: "val1"}, partition_key: fn {k, _v} -> k end)
+      # With custom partition routing (the function receives the key)
+      put_all(:my_buffer, %{{"acme", 42} => "val1"}, partition_key: fn {tenant, _id} -> tenant end)
 
   """
   @spec put_all(buffer(), map() | [{any(), any()}], keyword()) :: :ok
@@ -551,8 +551,8 @@ defmodule Tidefall.HashMap do
       # Simple delete
       delete(:my_buffer, :key1)
 
-      # With custom partition routing
-      delete(:my_buffer, :key1, partition_key: fn {k, _v} -> k end)
+      # With custom partition routing (the function receives the key)
+      delete(:my_buffer, {"acme", 42}, partition_key: fn {tenant, _id} -> tenant end)
 
   """
   @spec delete(buffer(), any(), keyword()) :: :ok
