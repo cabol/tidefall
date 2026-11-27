@@ -62,6 +62,7 @@ defmodule Tidefall.MixProject do
 
       # Test & Code Analysis
       {:excoveralls, "~> 0.18", only: :test},
+      {:stream_data, "~> 1.4", only: [:dev, :test]},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
 
