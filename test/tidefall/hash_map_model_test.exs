@@ -13,12 +13,7 @@ defmodule Tidefall.HashMapModelTest do
 
   property "agrees with a map model: last-write-wins put, newer-version-wins put_newer" do
     check all key_hasher <- member_of([false, true, &sha256/1]),
-              keys <-
-                uniq_list_of(Generators.any_term(key_mode(key_hasher)),
-                  uniq_fun: storage_key(key_hasher),
-                  min_length: 1,
-                  max_length: 6
-                ),
+              keys <- keys(key_hasher),
               commands <- list_of(command(keys), max_length: 25),
               partition_key <- member_of([nil, :static, &:erlang.phash2/1, {:erlang, :phash2, []}]),
               partitions <- integer(1..4),
@@ -54,6 +49,16 @@ defmodule Tidefall.HashMapModelTest do
   end
 
   ## Generators
+
+  # Unique by stored key and as model map keys. Before OTP 27, 0.0 and
+  # -0.0 are one map key but hash apart with a custom hasher.
+  defp keys(key_hasher) do
+    key_hasher
+    |> key_mode()
+    |> Generators.any_term()
+    |> uniq_list_of(uniq_fun: storage_key(key_hasher), min_length: 1, max_length: 6)
+    |> map(&Enum.uniq/1)
+  end
 
   # Without a hasher, keys holding maps or pattern atoms are a
   # documented `put_newer` limitation; the hasher is the workaround.
