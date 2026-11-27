@@ -11,8 +11,10 @@ defmodule Tidefall.HashMap.Options do
       type: {:or, [:boolean, {:fun, 1}]},
       default: false,
       doc: """
-      Optional key hashing for complex keys that don't survive ETS
-      match-spec equality (e.g. keys containing maps).
+      Optional key hashing for keys that `put_newer/4` and
+      `put_all_newer/3` can't update: keys containing maps or the
+      atoms `:_`, `:"$1"`, `:"$2"`, and so on. The hashed key must
+      be a plain term, like an integer or a binary.
 
       Can be one of:
 

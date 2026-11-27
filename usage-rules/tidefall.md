@@ -355,18 +355,22 @@ another timer-driven trigger.
 
 When building match specs (especially for `select_replace`):
 
-- **Bare tuples in match-spec bodies are operations, not literal
-  data.** Wrap literal tuples with the `ms_literal/1` helper — it
-  emits the `{{...}}` constructor form (and `{:const, map}` for
-  maps) that ETS expects. It is currently a private helper in
-  `Tidefall.HashMap` (only `put_newer` needs it); lift it to
-  a shared internal module if a second buffer needs conditional
-  updates.
+- **In match-spec guards and bodies, ETS reads bare tuples as
+  operations and atoms like `:_` or `:"$1"` as wildcards and
+  variables.** Wrap every literal (key, raw key, value, version)
+  as `{:const, term}` so ETS embeds it whole. Don't rebuild terms
+  element by element: large values hit the match-spec size limit
+  (`SystemLimitError`).
 - **Use literal (bound) keys in match heads** for O(1) lookup;
   pattern variables cause full-table scans.
-- Maps with embedded tuples have known limitations in
-  `select_replace`. If you hit one, fall back to two-step
-  `insert_new` + retry instead of forcing a single match spec.
+- **`{:const, ...}` is not allowed in a match head**, so the
+  literal key there is read as a pattern. A key holding a map or
+  a `:_`/`:"$N"` atom makes `select_replace` raise
+  `ArgumentError`. It's a documented limitation, so don't add a
+  workaround path for it. Supporting any key would add a lot of
+  complexity for little gain, and `:key_hasher` already covers
+  these keys (the ETS key becomes the hash, which must be a plain
+  term like an integer or a binary).
 
 ## Telemetry
 
@@ -407,8 +411,9 @@ empty-table guard skips the swap and the span entirely).
   `assert_receive`; keep `processing_interval` short (~100 ms).
 - For `put_newer`, assert all three orderings explicitly: newer
   overwrites, older is ignored, equal is ignored.
-- Test with tuple and list keys/values to exercise the
-  `ms_literal/1` path.
+- Exercise the `select_replace` path (write the same key twice)
+  with tuple, list, improper-list and match-spec-atom (`:_`,
+  `:"$1"`) values, and with atom versions such as `:"$1"`.
 - Cover graceful shutdown: `terminate/2` drains the current table
   synchronously via `process_batch/4` (no task hand-off) — see
   `architecture.md` → "Synchronous drain on shutdown".
