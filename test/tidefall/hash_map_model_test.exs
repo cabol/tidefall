@@ -2,7 +2,7 @@ defmodule Tidefall.HashMapModelTest do
   use ExUnit.Case, async: false
   use ExUnitProperties
 
-  alias Tidefall.{Generators, HashMap}
+  alias Tidefall.{Generators, HashMap, TestBuffer}
   alias Tidefall.HashMap.Entry
 
   # Fixed name, so a case that fails leaves it up for the next to stop
@@ -24,7 +24,7 @@ defmodule Tidefall.HashMapModelTest do
               partitions <- integer(1..4),
               batch_size <- integer(1..5),
               max_runs: 150 do
-      start_buffer!(partitions, batch_size)
+      TestBuffer.start!(HashMap, @buffer, partitions: partitions, processing_batch_size: batch_size)
       opts = [key_hasher: key_hasher, partition_key: partition_key]
 
       model =
@@ -45,8 +45,8 @@ defmodule Tidefall.HashMapModelTest do
         assert HashMap.get(@buffer, key, @missing, opts) === expected
       end
 
-      stop_buffer!()
-      entries = flush_batches()
+      TestBuffer.stop!(HashMap, @buffer)
+      entries = TestBuffer.flush_batches()
 
       assert length(entries) == map_size(model)
       assert Map.new(entries, &{&1.key, &1}) === model
@@ -147,54 +147,5 @@ defmodule Tidefall.HashMapModelTest do
 
   defp new_entry(key, value, version) do
     %Entry{key: key, value: value, version: version, updates: 0}
-  end
-
-  ## Helpers
-
-  defp start_buffer!(partitions, batch_size) do
-    # A failing case leaves the buffer up, and the shrinker reruns the body
-    if registered?() do
-      stop_buffer!()
-      flush_batches()
-    end
-
-    test = self()
-
-    {:ok, _} =
-      HashMap.start_link(
-        name: @buffer,
-        partitions: partitions,
-        processing_interval: :timer.hours(1),
-        processing_batch_size: batch_size,
-        processor: &send(test, {:batch, &1})
-      )
-  end
-
-  defp stop_buffer! do
-    :ok = HashMap.stop(@buffer)
-
-    # Registry cleanup is async; a restart before it ends routes with
-    # the old partition count
-    await_unregistered()
-  end
-
-  defp await_unregistered do
-    if registered?() do
-      Process.sleep(1)
-      await_unregistered()
-    end
-  end
-
-  defp registered? do
-    Registry.lookup(Tidefall.Registry, @buffer) != []
-  end
-
-  # stop/1 drains synchronously, so every batch is already here
-  defp flush_batches do
-    receive do
-      {:batch, batch} -> batch ++ flush_batches()
-    after
-      0 -> []
-    end
   end
 end
