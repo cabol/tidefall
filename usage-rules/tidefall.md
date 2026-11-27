@@ -414,6 +414,15 @@ empty-table guard skips the swap and the span entirely).
 - Exercise the `select_replace` path (write the same key twice)
   with tuple, list, improper-list and match-spec-atom (`:_`,
   `:"$1"`) values, and with atom versions such as `:"$1"`.
+- `test/tidefall/hash_map_model_test.exs` checks HashMap against
+  a plain-map model with StreamData; shared generators live in
+  `test/support/generators.ex`. Without a `:key_hasher`, keys
+  leave out maps and pattern atoms (`:_`, `:"$1"`, `:"$_"`, …),
+  the documented match-head limitation above; with a hasher every
+  term is a key. It sets a 1 h `processing_interval` so no tick
+  fires, and reads every batch after `stop/1`, which drains
+  synchronously. When a limitation is lifted, drop its exclusion
+  so the property guards the fix.
 - Cover graceful shutdown: `terminate/2` drains the current table
   synchronously via `process_batch/4` (no task hand-off) — see
   `architecture.md` → "Synchronous drain on shutdown".
