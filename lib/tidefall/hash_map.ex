@@ -706,10 +706,11 @@ defmodule Tidefall.HashMap do
     # not a pattern variable. This allows ETS to use its hash index for O(1)
     # lookup rather than scanning the entire table.
     #
-    # In match spec bodies, bare tuples are interpreted as operations/function
-    # calls, NOT as literal data. We wrap ets_key, raw_key, and value with
-    # {:const, term} so ETS copies them as they are. Version is restricted to
-    # integer/atom/binary (match-spec literals; no wrapping needed).
+    # In match spec guards and bodies, ETS reads bare tuples as operations and
+    # atoms such as :"$1" as variables. Wrapping a term as {:const, term}
+    # embeds it whole as a literal. Rebuilding it element by element instead
+    # made select_replace hit the match spec size limit (SystemLimitError) on
+    # values with a few thousand elements, and slowed down every update.
     [
       {
         # Match by the ETS lookup key (literal — O(1) hash lookup)
@@ -721,20 +722,14 @@ defmodule Tidefall.HashMap do
           updates: :"$2"
         ),
         # Guard (update only if): new_version > existing_version
-        [{:>, version, :"$1"}],
+        [{:>, {:const, version}, :"$1"}],
         # Result: the new entry with incremented updates counter
-        #
-        # In match spec bodies, bare tuples are interpreted as operations, not
-        # data, and atoms such as :"$1" as variables. {:const, term} embeds
-        # the term whole as a literal: rebuilding it element by element made
-        # select_replace exceed the match spec size limit (SystemLimitError)
-        # on values holding a few thousand elements, and slowed every update.
         [
           {entry(
              key: {:const, ets_key},
              raw_key: {:const, raw_key},
              value: {:const, value},
-             version: version,
+             version: {:const, version},
              updates: {:+, :"$2", 1}
            )}
         ]
