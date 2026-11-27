@@ -141,9 +141,9 @@ Required steps beyond the skeleton:
 1. Define your `entry` record with `defrecordp` — the shape is
    yours. Queue uses 2 fields (`key, value`); HashMap uses 5
    (`key, raw_key, value, version, updates`) to support
-   `put_newer` (`raw_key` stores the internal key when a
-   `:key_hasher` is in play; the user-facing `Entry` struct
-   exposes 4 of them — everything but `raw_key`).
+   `put_newer` (`raw_key` stores the original key, wrapped as
+   `{key}`, when a `:key_hasher` is in play; the user-facing
+   `Entry` struct exposes 4 of them — everything but `raw_key`).
 2. `ets_table_opts/0` and `ets_match_spec/0` are independent
    decisions you own; no cross-impl coupling.
 3. The skeleton's `push/3` is single-item; for list/batch

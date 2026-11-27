@@ -176,9 +176,10 @@ defmodule Tidefall.HashMap do
 
   # Entry record stored in ETS. `:key` is the ETS lookup key (the original
   # key when `:key_hasher` is not used, the hash when it is). `:raw_key`
-  # holds the original key when hashing is in effect, and is `nil`
-  # otherwise; the match spec uses it to emit the user-facing original
-  # key on the processor batch.
+  # is `nil` when the key isn't hashed, and the original key wrapped as
+  # `{key}` when it is, so a hashed `nil` key doesn't look like a
+  # non-hashed one. The match spec uses it to give the processor the
+  # original key.
   defrecordp(:entry, key: nil, raw_key: nil, value: nil, version: 0, updates: 0)
 
   @typedoc "Proxy type for a buffer"
@@ -619,7 +620,7 @@ defmodule Tidefall.HashMap do
     # Two clauses so the processor always sees the user's ORIGINAL key
     # in `%Entry{key: ...}`, regardless of whether `:key_hasher` was used
     # on write. Non-hashed entries have `:raw_key` == nil and the ETS key
-    # IS the original; hashed entries have `:raw_key` set to the original
+    # IS the original; hashed entries have `:raw_key` set to `{original}`
     # and the ETS key is the hash (an internal storage detail).
     [
       # Non-hashed entries
@@ -628,10 +629,10 @@ defmodule Tidefall.HashMap do
         [true],
         [%Entry{key: :"$1", value: :"$2", version: :"$3", updates: :"$4"}]
       },
-      # Hashed entries — use raw_key as the user-facing key
+      # Hashed entries: unwrap raw_key to get the original key
       {
-        entry(key: :_, raw_key: :"$1", value: :"$2", version: :"$3", updates: :"$4"),
-        [{:"/=", :"$1", nil}],
+        entry(key: :_, raw_key: {:"$1"}, value: :"$2", version: :"$3", updates: :"$4"),
+        [true],
         [%Entry{key: :"$1", value: :"$2", version: :"$3", updates: :"$4"}]
       }
     ]
@@ -654,11 +655,11 @@ defmodule Tidefall.HashMap do
   end
 
   # Resolves the `{ets_key, raw_key}` pair for storage/lookup.
-  # `raw_key` is `nil` for non-hashed entries — distinguishing them
-  # from hashed entries in the match spec.
+  # `raw_key` is `nil` for non-hashed entries and `{key}` for hashed ones,
+  # so the match spec can tell them apart even when the key is `nil`.
   defp resolve_keys(key, false), do: {key, nil}
-  defp resolve_keys(key, true), do: {:erlang.phash2(key), key}
-  defp resolve_keys(key, hasher) when is_function(hasher, 1), do: {hasher.(key), key}
+  defp resolve_keys(key, true), do: {:erlang.phash2(key), {key}}
+  defp resolve_keys(key, hasher) when is_function(hasher, 1), do: {hasher.(key), {key}}
 
   defp validate_versioned_entry!({_key, _value, version} = entry)
        when is_integer(version)
