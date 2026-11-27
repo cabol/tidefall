@@ -597,6 +597,21 @@ defmodule Tidefall.HashMapTest do
       assert HashMap.get(buff, :atom_key) == "v2"
     end
 
+    test "ok: compares atom versions that look like match spec variables as plain atoms",
+         %{buffer: buff} do
+      # Atoms sort after integers, so both newer versions win.
+      assert HashMap.put_newer(buff, :var_key, "v1", version: 1) == :ok
+      assert HashMap.put_newer(buff, :var_key, "v2", version: :"$1") == :ok
+      assert HashMap.put_newer(buff, :invalid_var_key, "v1", version: 1) == :ok
+      assert HashMap.put_newer(buff, :invalid_var_key, "v2", version: :"$0") == :ok
+
+      # :"$0" sorts before :"$1", so this one is ignored.
+      assert HashMap.put_newer(buff, :var_key, "v_old", version: :"$0") == :ok
+
+      assert HashMap.get(buff, :var_key) == "v2"
+      assert HashMap.get(buff, :invalid_var_key) == "v2"
+    end
+
     test "error: put_newer raises NimbleOptions.ValidationError for unsupported version type",
          %{buffer: buff} do
       assert_raise NimbleOptions.ValidationError, ~r/:version option/, fn ->
