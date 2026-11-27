@@ -78,13 +78,22 @@ defmodule Tidefall.TestBuffer do
   end
 
   @doc """
-  Every batch in the mailbox, concatenated. `tick!/1` and `stop!/2`
-  wait for their batches, so after either one they're all here.
+  Every batch in the mailbox, concatenated. See `batches/0`.
   """
   @spec flush_batches() :: list()
   def flush_batches do
+    Enum.concat(batches())
+  end
+
+  @doc """
+  Every batch in the mailbox, one list per batch. `tick!/1` and
+  `stop!/2` wait for their batches, so after either one they're all
+  here.
+  """
+  @spec batches() :: [list()]
+  def batches do
     receive do
-      {:batch, batch} -> batch ++ flush_batches()
+      {:batch, batch} -> [batch | batches()]
     after
       0 -> []
     end

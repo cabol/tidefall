@@ -427,6 +427,16 @@ empty-table guard skips the swap and the span entirely).
   what was written since the previous one (Queue in push order,
   HashMap as the coalesced window), and that `stop/1` delivers
   the rest.
+- `test/tidefall/queue_order_test.exs` checks what Queue
+  delivers at `stop/1`. With the default `:sort_key`, items come
+  out in push order; with a custom one, each batch is sorted,
+  each `:partition_key` value stays in one partition, and
+  nothing is lost. Push only from the test process, since the
+  order of items pushed at the same timestamp depends on
+  `make_ref/0` ordering, which Erlang doesn't document. Compare
+  partition keys with `:erlang.term_to_binary/1` instead of
+  using them as map keys; before OTP 27, `0.0` and `-0.0` are
+  the same map key, but they may go to different partitions.
 - Property tests start, tick and stop buffers through
   `Tidefall.TestBuffer` (`test/support/test_buffer.ex`). It sets a
   1 h `processing_interval` so no tick fires on its own, and its
