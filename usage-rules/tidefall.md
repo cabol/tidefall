@@ -419,10 +419,21 @@ empty-table guard skips the swap and the span entirely).
   `test/support/generators.ex`. Without a `:key_hasher`, keys
   leave out maps and pattern atoms (`:_`, `:"$1"`, `:"$_"`, …),
   the documented match-head limitation above; with a hasher every
-  term is a key. It sets a 1 h `processing_interval` so no tick
-  fires, and reads every batch after `stop/1`, which drains
+  term is a key. It reads every batch after `stop/1`, which drains
   synchronously. When a limitation is lifted, drop its exclusion
   so the property guards the fix.
+- `test/tidefall/delivery_model_test.exs` interleaves random
+  writes with ticks and checks that each tick delivers exactly
+  what was written since the previous one (Queue in push order,
+  HashMap as the coalesced window), and that `stop/1` delivers
+  the rest.
+- Property tests start, tick and stop buffers through
+  `Tidefall.TestBuffer` (`test/support/test_buffer.ex`). It sets a
+  1 h `processing_interval` so no tick fires on its own, and its
+  processor sends each batch to the test process. It's the one
+  place tests touch partition internals (the registry, the
+  `:processing` message, `processing?`), so keep that coupling
+  there, and don't sleep to wait for a tick.
 - Cover graceful shutdown: `terminate/2` drains the current table
   synchronously via `process_batch/4` (no task hand-off) — see
   `architecture.md` → "Synchronous drain on shutdown".
