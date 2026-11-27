@@ -558,6 +558,31 @@ defmodule Tidefall.HashMapTest do
                      @default_timeout
     end
 
+    test "ok: updates existing entry with match spec atoms and improper lists in the value",
+         %{buffer: buff} do
+      key = {:put, :key}
+      value = {:put, [{:key, :"$1", :_}, {1, [2, {:"$2"} | :tail]}, %{nested: {:"$3"}}]}
+
+      assert HashMap.put_newer(buff, key, :old, version: 100) == :ok
+      assert HashMap.put_newer(buff, key, value, version: 200) == :ok
+
+      assert HashMap.get(buff, key) == value
+
+      assert_receive {:process_completed,
+                      [%Entry{key: ^key, value: ^value, version: 200, updates: 1}]},
+                     @default_timeout
+    end
+
+    test "ok: updates existing entry with a value holding thousands of elements",
+         %{buffer: buff} do
+      value = for i <- 1..50_000, do: %{"title" => "row-#{i}"}
+
+      assert HashMap.put_all_newer(buff, [{:key, :old, 1}]) == :ok
+      assert HashMap.put_all_newer(buff, [{:key, value, 2}]) == :ok
+
+      assert HashMap.get(buff, :key) == value
+    end
+
     test "ok: accepts binary and atom versions (compared via Erlang term order)",
          %{buffer: buff} do
       assert HashMap.put_newer(buff, :str_key, "v1", version: "01HXYZ-001") == :ok
@@ -596,6 +621,37 @@ defmodule Tidefall.HashMapTest do
 
       assert_raise ArgumentError, ~r/invalid entry/, fn ->
         HashMap.put_all_newer(buff, entries)
+      end
+    end
+  end
+
+  describe "put_all_newer/3 while the partition swaps tables" do
+    setup do
+      # A 5 ms processing interval makes the partition swap (and delete) its
+      # table many times while a batch of large values is being written.
+      start_supervised!(
+        {HashMap,
+         name: __MODULE__, partitions: 1, processing_interval: 5, processor: fn _batch -> :ok end}
+      )
+
+      {:ok, buffer: __MODULE__}
+    end
+
+    test "ok: never writes to a table that was swapped out and deleted", %{buffer: buff} do
+      value =
+        for i <- 1..500 do
+          %{"title" => "row-#{i}", "facility" => "F#{i}", "status" => "completed"}
+        end
+
+      for round <- 1..200 do
+        entries = for key <- 1..20, do: {{:key, key}, value, 2 * round}
+
+        assert HashMap.put_all_newer(buff, entries) == :ok
+
+        # Writing the same keys again goes through the select_replace path.
+        newer = Enum.map(entries, fn {key, value, version} -> {key, value, version + 1} end)
+
+        assert HashMap.put_all_newer(buff, newer) == :ok
       end
     end
   end
